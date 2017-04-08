@@ -59,6 +59,10 @@ class Tileset:
                 'ROAD_8': 32,
                 'ROAD_9': 33,
                 'ROAD_10': 34,
+                'ROAD_11': 35,
+                'ROAD_12': 36,
+                'ROAD_13': 37,
+                'ROAD_14': 38,
 
                 # water directions
                 'RIVER_0': 40,
@@ -72,6 +76,10 @@ class Tileset:
                 'RIVER_8': 48,
                 'RIVER_9': 49,
                 'RIVER_10': 50,
+                'RIVER_11': 51,
+                'RIVER_12': 52,
+                'RIVER_13': 53,
+                'RIVER_14': 54,
 
                 # buildings
                 'HOUSE': 56,
@@ -157,9 +165,10 @@ class Map:
             return None
 
     def genIsland(self):
-        image = generators.MainGenerator().generateIsland(7, "mixed", 1.5).tobytes("raw", "RGB")
-        surface = pygame.image.fromstring(image, (2 ** 7 + 1, 2 ** 7 + 1), 'RGB')
-        self.genFromImage(surface, (350,350))
+        #image = generators.MainGenerator().generateIsland((320,250), "mixed", 1.5).tobytes("raw", "RGB")
+        #surface = pygame.image.fromstring(image, image.get_size(), 'RGB')
+        surface = generators.MainGenerator().generateIsland(7)
+        self.genFromImage(surface, surface.get_size())
 
     def genFromImage(self, surface, max_size):
         size = surface.get_size()
@@ -191,13 +200,13 @@ class Map:
                 average = (red + green + blue) // 3
 
                 tile = 'GRASS'
-                if(average < 50):
+                if(average < 82):
                     tile = 'OCEAN'
-                elif (average < 70):
+                elif (average < 90):
                     tile = 'SHORE'
-                elif (average < 80):
+                elif (average < 94):
                     tile = 'SAND'
-                elif (average < 200):
+                elif (average < 210):
                     tile = 'GRASS'
                 else:
                     tile = 'GROUND'
@@ -268,10 +277,10 @@ class Map:
                             tile_dir += "r"
 
                         value_table = {
-                            't': 1,
-                            'l': 0,
-                            'b': 1,
-                            'r': 0,
+                            't': 11,
+                            'b': 12,
+                            'l': 13,
+                            'r': 14,
                             'lr': 0,
                             'tb': 1,
                             'tl': 2,

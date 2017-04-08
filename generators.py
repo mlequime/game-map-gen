@@ -1,9 +1,17 @@
 #!/usr/bin/python
 import random
-import matplotlib.pyplot as plt
 import numpy as np
 
+import noiselib
+import pygame
+import math
+from noiselib import fBm, simplex_noise2
+from noiselib.modules.surfaces import PixelArray, RGBLerpNoise
+from noiselib.modules.main import RescaleNoise
+
 from PIL import Image
+
+import config
 
 
 class DiamondSquare:
@@ -144,43 +152,140 @@ class PerlinNoise:
 
 class MainGenerator:
     def __init__(self):
+        noiselib.init(256)
         pass
 
     def generateStandard(self, scale, type, roughness):
-        res = 1024 if scale > 10 else 2 ** scale
 
-        if type == "land":
-            corners = (res - 1, res - 1, res - 1, res - 1)
-        elif type == "mixed":
-            corners = (0, (res - 1) / 2, (res - 1) / 2, res - 1)
-        elif type == "ocean":
-            corners = (0, 0, 0, 0)
-        else:
-            corners = ((res - 1) / 2, (res - 1) / 2, (res - 1) / 2, (res - 1) / 2)
+        res = 2 ** scale if scale < 8 else 2 ** 8
+        size = (res, res)
 
+        # if type == "land":
+        #     corners = (res - 1, res - 1, res - 1, res - 1)
+        # elif type == "mixed":
+        #     corners = (0, (res - 1) / 2, (res - 1) / 2, res - 1)
+        # elif type == "ocean":
+        #     corners = (0, 0, 0, 0)
+        # else:
+        #     corners = ((res - 1) / 2, (res - 1) / 2, (res - 1) / 2, (res - 1) / 2)
+#
         # Produce the initial shape with the diamond-square algorithm
-        dsGenerator = DiamondSquare(res, corners)
-        dsGenerator.generate(roughness)
+        #dsGenerator = DiamondSquare(res, corners)
+        #dsGenerator.generate(roughness)
+        #img = dsGenerator.convertToImage()
+
+        #test = pygame.image.frombuffer(img.tobytes(), img.size, 'RGB')
+        #test = pygame.transform.scale(test, size)
+        #pygame.image.save(test, "test2.png")
+
+        src = fBm(8, 0.45, simplex_noise2)
+        src = RescaleNoise((-1, 1), (0, 1), src)
+        colors = ((0, 0, 0), (233, 233, 233), 1)
+        src = RGBLerpNoise(colors, src)
+
+        surface = pygame.Surface((size[0]*2,size[1]*2))
+        PixelArray(surface, src)
+
+        surface = pygame.transform.smoothscale(surface, size)
+
+        pygame.image.save(surface, "test3.png")
+
+        return surface
+
+    def generateIsland(self, scale):
+        # Generate a standard map
+        slate = self.generateStandard(scale, type, 2.5)
+
+        # apply the mask
+
+        slate = self.increaseContrast(slate,1.6,-10)
+        slate = self.applyVMask(slate)
+        pygame.image.save(slate, "slate.png")
+        return slate
 
 
-        source = fBm(8, 0.4, simplex_noise2)
-        # rescale source for RGB
-        source = RescaleNoise((-1, 1), (0, 1), source)
-        # convert source data into rgb ints
-        colors = ((0, 0, 0), (255, 255, 255), 1)
-        # applying source to the ColorNoise module returns a function mapping source data to rgb ints
-        source = RGBLerpNoise(colors, source)
-        # initialize surface and pixel array
-        surface = Surface(SCREEN_SIZE)
-        # read rgb ints into pixel array
-        pxarray = PixelArray(surface, source)
+    def mergeImages(self, mode, *args):
+
+        size = args[0].get_size()
+        slate = pygame.Surface(size)
+
+        for surface in args:
+            if surface.get_size() != size:
+                print "Sizes do not match!"
+
+        for y in range(0, size[1]):
+            row = []
+            for x in range(0, size[0]):
+                average = []
+                for surface in args:
+                    color = surface.get_at((x, y))
+                    average.append((color.r + color.g + color.b) // 3)
+                if mode == "average":
+                    av = int(round(sum(average) / len(average)))
+                elif mode == "multiply":
+                    av = int(min(average))
+                try:
+                    slate.set_at((x,y), pygame.Color(av, av, av, 255))
+                except Exception, e:
+                    print av
+        return slate
+
+    def applyVMask(self, surface):
+        size = surface.get_size()
+        mask = pygame.Surface(size)
+        for y in range(0, size[1]):
+            for x in range(0, size[0]):
+                distances = x - size[0] * 0.5, y - size[1] * 0.5
+                dis = math.sqrt(distances[0] ** 2 + distances[1] ** 2)
+
+                max_w = float(size[0]) * 0.5
+                delta = float(dis) / max_w
+                gradient = delta * delta
+                change = max(0.0, 1.0 - delta) * 2.5
+
+                # only want to *darken* colors when applying this mask,
+                # otherwise appears totally washed out
+                old_color = surface.get_at((x, y)).r
+                color = int(round(float(old_color * change)))
+                if color > old_color:
+                    color = old_color
+
+                mask.set_at((x, y), pygame.Color(color,color,color,255))
+        return mask
 
 
-        img = dsGenerator.convertToImage()
 
-        img.save("test2.png")
-        return img
+    def brightenImage(self, surface, factor):
+        print "Brightening image by {}".format(factor)
 
-    def generateIsland(self, scale, type, roughness):
-        img = self.generateStandard(scale, type, roughness)
-        return img
+
+        size = surface.get_size()
+
+        for y in range(0, size[1]):
+            for x in range(0, size[0]):
+                color = surface.get_at((x,y))
+                new_color =  pygame.Color(color.r * factor, color.g * factor, color.b * factor, 255)
+                surface.set_at((x,y), new_color)
+
+        pygame.image.save(surface, "slate_brighter.png")
+        return surface
+
+    def increaseContrast(self, surface, factor, brightness=0):
+        print "Increasing contrast of surface"
+        size = surface.get_size()
+
+
+        for y in range(0, size[1]):
+            for x in range (0, size[0]):
+                old_color = surface.get_at((x,y)).r
+                new_color = int((factor * (old_color - 128)) + 128 + brightness)
+                if new_color < 0:
+                    new_color = 0
+                elif new_color > 255:
+                    new_color = 255
+                try:
+                    surface.set_at((x,y), pygame.Color(new_color, new_color, new_color, 255))
+                except Exception, e:
+                    print new_color
+
+        return surface
