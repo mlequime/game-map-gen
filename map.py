@@ -200,16 +200,18 @@ class Map:
                 average = (red + green + blue) // 3
 
                 tile = 'GRASS'
-                if(average < 82):
+                if(average < 70):
                     tile = 'OCEAN'
                 elif (average < 90):
                     tile = 'SHORE'
-                elif (average < 94):
+                elif (average < 100):
                     tile = 'SAND'
-                elif (average < 210):
+                elif (average < 200):
                     tile = 'GRASS'
-                else:
+                elif (average < 230):
                     tile = 'GROUND'
+                else:
+                    tile = 'SNOW'
 
                 self.layer0[y][x] = tile
 

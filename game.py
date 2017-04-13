@@ -18,7 +18,7 @@ def run():
 
     config.FONT = pygame.font.Font("src/Bugsmirc05.ttf", 16)
 
-    open_screen(screen, 'menu', False)
+    open_screen(screen, 'game', False)
 
 def open_screen(screen, opt, close):
     if close:

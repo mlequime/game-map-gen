@@ -160,23 +160,23 @@ class MainGenerator:
         res = 2 ** scale if scale < 8 else 2 ** 8
         size = (res, res)
 
-        # if type == "land":
-        #     corners = (res - 1, res - 1, res - 1, res - 1)
-        # elif type == "mixed":
-        #     corners = (0, (res - 1) / 2, (res - 1) / 2, res - 1)
-        # elif type == "ocean":
-        #     corners = (0, 0, 0, 0)
-        # else:
-        #     corners = ((res - 1) / 2, (res - 1) / 2, (res - 1) / 2, (res - 1) / 2)
-#
-        # Produce the initial shape with the diamond-square algorithm
-        #dsGenerator = DiamondSquare(res, corners)
-        #dsGenerator.generate(roughness)
-        #img = dsGenerator.convertToImage()
+        if type == "land":
+            corners = (res - 1, res - 1, res - 1, res - 1)
+        elif type == "mixed":
+            corners = (0, (res - 1) / 2, (res - 1) / 2, res - 1)
+        elif type == "ocean":
+            corners = (0, 0, 0, 0)
+        else:
+            corners = ((res - 1) / 2, (res - 1) / 2, (res - 1) / 2, (res - 1) / 2)
 
-        #test = pygame.image.frombuffer(img.tobytes(), img.size, 'RGB')
-        #test = pygame.transform.scale(test, size)
-        #pygame.image.save(test, "test2.png")
+
+        dsGenerator = DiamondSquare(res, corners)
+        dsGenerator.generate(roughness)
+        img = dsGenerator.convertToImage()
+
+        test = pygame.image.frombuffer(img.tobytes(), img.size, 'RGB')
+        test = pygame.transform.scale(test, size)
+        pygame.image.save(test, "diamonsquare.png")
 
         src = fBm(8, 0.45, simplex_noise2)
         src = RescaleNoise((-1, 1), (0, 1), src)
@@ -198,10 +198,15 @@ class MainGenerator:
 
         # apply the mask
 
-        slate = self.increaseContrast(slate,1.6,-10)
-        slate = self.applyVMask(slate)
+        slate = self.increaseContrast(slate,1.6,0)
+        slate = self.mask_radial(slate)
+
+        pygame.image.save(slate, "slate.png")
+        self.erosion(slate)
+        self.set_sea_level(slate, 90)
         pygame.image.save(slate, "slate.png")
         return slate
+
 
 
     def mergeImages(self, mode, *args):
@@ -230,35 +235,66 @@ class MainGenerator:
                     print av
         return slate
 
-    def applyVMask(self, surface):
+    def mask_radial(self, surface):
         size = surface.get_size()
-        mask = pygame.Surface(size)
+        output = pygame.Surface(size)
+
         for y in range(0, size[1]):
             for x in range(0, size[0]):
-                distances = x - size[0] * 0.5, y - size[1] * 0.5
-                dis = math.sqrt(distances[0] ** 2 + distances[1] ** 2)
+                loc = (x - size[0] * 0.5, y - size[1] * 0.5)
+                d = float(math.sqrt(loc[0] ** 2 + loc[1] ** 2))
 
-                max_w = float(size[0]) * 0.5
-                delta = float(dis) / max_w
-                gradient = delta * delta
-                change = max(0.0, 1.0 - delta) * 2.5
+                m = float(size[0]) * 0.5
+                change = max(0.0, 1.0 - (d / m)) * 2.5
 
                 # only want to *darken* colors when applying this mask,
                 # otherwise appears totally washed out
                 old_color = surface.get_at((x, y)).r
+
                 color = int(round(float(old_color * change)))
                 if color > old_color:
                     color = old_color
+                output.set_at((x, y), pygame.Color(color,color,color,255))
+        return output
 
-                mask.set_at((x, y), pygame.Color(color,color,color,255))
-        return mask
+    def mask_hyperbolic(self, surface):
+        size = surface.get_size()
+        output = pygame.Surface(size)
+        for y in range(0, size[1]):
+            for x in range(0, size[0]):
+                useX = (float(x) / (float(size[0]) / 2)) - 1.0
+                useY = (float(y) / (float(size[1]) / 2)) - 1.0
 
+                z = (useX ** 2 - useY ** 2) * 2 + 0.5
+                old_color = surface.get_at((x,y)).r
+                color = int(round(float(max(0.0, old_color * z))))
+
+                if color > old_color:
+                    color = old_color
+                output.set_at((x,y), pygame.Color(color,color,color,255))
+
+        return output
+
+    def mask_linear(self, surface):
+        size = surface.get_size()
+        output = pygame.Surface(size)
+        for y in range(0, size[1]):
+            for x in range(0, size[0]):
+                useX = float(x) / float(size[0]/2) - 1.0
+                useY = float(y) / float(size[0]/2) - 1.0
+
+                z = ((-useY)**2)*3
+                old_color = surface.get_at((x,y)).r
+                color = int(round(float(max(0.0, old_color * z))))
+
+                if color > old_color:
+                    color = old_color
+                output.set_at((x,y), pygame.Color(color,color,color,255))
+
+        return output
 
 
     def brightenImage(self, surface, factor):
-        print "Brightening image by {}".format(factor)
-
-
         size = surface.get_size()
 
         for y in range(0, size[1]):
@@ -266,12 +302,9 @@ class MainGenerator:
                 color = surface.get_at((x,y))
                 new_color =  pygame.Color(color.r * factor, color.g * factor, color.b * factor, 255)
                 surface.set_at((x,y), new_color)
-
-        pygame.image.save(surface, "slate_brighter.png")
         return surface
 
     def increaseContrast(self, surface, factor, brightness=0):
-        print "Increasing contrast of surface"
         size = surface.get_size()
 
 
@@ -289,3 +322,91 @@ class MainGenerator:
                     print new_color
 
         return surface
+
+    def averageRGB(self, color):
+        return int((color.r + color.g + color.b) / 3)
+
+
+    def erosion(self, surface):
+        times_to_run = 40000
+        size = surface.get_size()
+        while times_to_run > 0:
+            xy = random.randint(0,size[0] - 1), random.randint(0,size[1] -1)
+            self.erode(surface, size, xy)
+            times_to_run -= 1
+
+        pygame.image.save(surface, "erosion_test2.png")
+
+    def erode(self, surface, size, xy):
+        x, y = xy
+        av = self.averageRGB(surface.get_at(xy))
+
+        av  = int(av - random.randint(1,2))
+
+        if av < 20:
+            return
+
+        if av > 255:
+            av = 255
+
+
+
+        dirs = {
+            'top': 0,
+            'bottom': 0,
+            'left': 0,
+            'right': 0
+        }
+
+        dirs['top'] = 127.5 if y == 0 else self.averageRGB(surface.get_at((x, y - 1)))
+        dirs['bottom'] = 127.5 if y == size[1] - 1 else  self.averageRGB(surface.get_at((x, y + 1)))
+        dirs['left'] = 127.5 if x == 0 else self.averageRGB(surface.get_at((x - 1, y)))
+        dirs['right'] = 127.5 if x == size[0] - 1 else self.averageRGB(surface.get_at((x + 1, y)))
+
+        mean_of_dirs = int((dirs['top'] + dirs['bottom'] + dirs['left'] + dirs['right'])/4)
+
+        # this prevents the raindrops from 'drilling' holes into the map, if the average of the directions around it are
+        # signficantly greater than the spot, don't continue
+        if mean_of_dirs - 2 > av:
+            return
+
+
+        surface.set_at(xy, pygame.Color(av,av,av,255))
+
+        possible_dirs = []
+        for dir, value in dirs.iteritems():
+            if value < av or (value == av and random.randint(0,1) == 1):
+                possible_dirs.append(dir)
+
+        # if there's flat land pick a random direction
+
+        if len(possible_dirs) == 0:
+            return
+
+        if random.randint(0,1) == 1:
+            selections = [possible_dirs[random.randint(0, len(possible_dirs)-1)]]
+        else:
+            selections = possible_dirs
+
+        for selection in selections:
+            if selection == 'top':
+                if y > 0:
+                    self.erode(surface, size, (x, y - 1))
+            if selection == 'bottom':
+                if y < size[1] - 1:
+                    self.erode(surface, size, (x, y + 1))
+            if selection == 'left':
+                if x > 0:
+                    self.erode(surface, size, (x - 1, y))
+            if selection == 'right':
+                if x < size[0] - 1:
+                    self.erode(surface, size, (x + 1, y))
+
+
+    def set_sea_level(self, surface, threshold_value):
+        size = surface.get_size()
+        for y in range(0, size[1]):
+            for x in range(0, size[0]):
+                val = self.averageRGB(surface.get_at((x,y)))
+                if val < threshold_value:
+                    surface.set_at((x,y), pygame.Color(val,val,val,255))
