@@ -16,6 +16,7 @@ import config
 
 class DiamondSquare:
     def __init__(self, res, corners):
+        """Sets up the diamond-square generator."""
         self.map = []
         self.res = res + 1
         self.max = self.res - 1
@@ -305,6 +306,7 @@ class MainGenerator:
         return surface
 
     def increaseContrast(self, surface, factor, brightness=0):
+        """Increases the contract of an input surface by given factor, with option for a brightness modifier"""
         size = surface.get_size()
 
 
@@ -324,12 +326,16 @@ class MainGenerator:
         return surface
 
     def averageRGB(self, color):
+        """Averages the RGB values into a grayscale color."""
         return int((color.r + color.g + color.b) / 3)
 
 
-    def erosion(self, surface):
-        times_to_run = 40000
+    def erosion(self, surface, factor=4):
+        """'Erodes' an input surface through the use of a simulated rainfall function. Power or strength of the erosion
+        can be controlled with the input factor."""
+        times_to_run = 10000 * factor
         size = surface.get_size()
+
         while times_to_run > 0:
             xy = random.randint(0,size[0] - 1), random.randint(0,size[1] -1)
             self.erode(surface, size, xy)
@@ -338,6 +344,9 @@ class MainGenerator:
         pygame.image.save(surface, "erosion_test2.png")
 
     def erode(self, surface, size, xy):
+        """Helper function for erosion. A recursive virtual raindrop that will run down the edges of a mountain on
+        the map and erode the terrain as it passes, creating smooth grooves in the landscape. Takes the surface, the
+        the size of the surface and the current co-ordinates"""
         x, y = xy
         av = self.averageRGB(surface.get_at(xy))
 
@@ -349,8 +358,6 @@ class MainGenerator:
         if av > 255:
             av = 255
 
-
-
         dirs = {
             'top': 0,
             'bottom': 0,
@@ -358,10 +365,12 @@ class MainGenerator:
             'right': 0
         }
 
-        dirs['top'] = 127.5 if y == 0 else self.averageRGB(surface.get_at((x, y - 1)))
-        dirs['bottom'] = 127.5 if y == size[1] - 1 else  self.averageRGB(surface.get_at((x, y + 1)))
-        dirs['left'] = 127.5 if x == 0 else self.averageRGB(surface.get_at((x - 1, y)))
-        dirs['right'] = 127.5 if x == size[0] - 1 else self.averageRGB(surface.get_at((x + 1, y)))
+        # if at the extremes of the generated map, assume the pixel value is slightly higher to prevent runoff without
+        # skewing averages
+        dirs['top'] = av + 1 if y == 0 else self.averageRGB(surface.get_at((x, y - 1)))
+        dirs['bottom'] = av + 1 if y == size[1] - 1 else  self.averageRGB(surface.get_at((x, y + 1)))
+        dirs['left'] = av + 1if x == 0 else self.averageRGB(surface.get_at((x - 1, y)))
+        dirs['right'] = av + 1 if x == size[0] - 1 else self.averageRGB(surface.get_at((x + 1, y)))
 
         mean_of_dirs = int((dirs['top'] + dirs['bottom'] + dirs['left'] + dirs['right'])/4)
 
@@ -369,7 +378,6 @@ class MainGenerator:
         # signficantly greater than the spot, don't continue
         if mean_of_dirs - 2 > av:
             return
-
 
         surface.set_at(xy, pygame.Color(av,av,av,255))
 

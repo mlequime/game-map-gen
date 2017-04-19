@@ -219,7 +219,7 @@ class GameScreen:
                 self.map.destroy = item.ID == 'BULLDOZER'
                 self.selected_item = item
 
-        for tile in self.map.visibleTiles:
+        for tile in self.map.visible_tiles:
             if tile['coords'][0] +  config.TILE_W > pos[0] > tile['coords'][0]\
                 and tile['coords'][1] + config.TILE_H > pos[1] > tile['coords'][1]:
                 self.addToTile(tile['map_xy'])
@@ -233,17 +233,17 @@ class GameScreen:
         x, y = tile_xy
         # if bulldozer selected
         if self.selected_item.ID == 'BULLDOZER':
-            if self.map.layer1[y][x] != 'UI_EMPTY':
-                if self.map.layer1[y][x] == 'ROAD':
+            if self.map.layer_1[y][x] != 'UI_EMPTY':
+                if self.map.layer_1[y][x] == 'ROAD':
                     self.player.roads -= 1
-                self.map.layer1[y][x] = 'UI_EMPTY'
+                self.map.layer_1[y][x] = 'UI_EMPTY'
                 self.playSound('delete')
                 self.player.money -= 20
 
         #else if we can place tile
-        elif self.map.layer1[y][x] == 'UI_EMPTY':
+        elif self.map.layer_1[y][x] == 'UI_EMPTY':
             # add the selected item to the tile
-            self.map.layer1[y][x] = self.selected_item.ID
+            self.map.layer_1[y][x] = self.selected_item.ID
             self.sounds['place'].stop()
             self.sounds['place'].play()
             self.player.money -= self.selected_item.price

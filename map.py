@@ -107,70 +107,98 @@ class Tileset:
 
 class Map:
     def __init__(self, tileset, dim):
+        # Initial setup of variables
+        self.size = (0,0)
+        self.max_pos = (0,0)
+        self.visible_tiles = []
+
+        # Sets the map to the given dimensions
         self.set_size(dim)
+
+        # The tileset used by the map
         self.tileset = tileset
-        self.posAt = [0, 0]
+
+        # The current top-left corner position of the viewfinder, i.e. where to draw the map from
+        self.pos_at = [0, 0]
+        # A settings which indicates whether the user is destroying an object or
         self.destroy = False
 
-        self.layer0 = []
-        self.layer1 = []
+        # The tiles which it is not possible to place objects on
+        self.impassable = ['OCEAN','SHORE','ICE']
 
-        self.genIsland()
+        # The two tile layers for the map instance
+        self.layer_0 = []
+        self.layer_1 = []
+
+        # A list of all the landmasses
+        self.islands = []
+
+        # Generate an island
+        self.gen_island()
+
+        # Define the islands
+        self.define_islands()
 
     def set_size(self, size):
         self.size = size
-        self.maxPos = self.size[0] - config.SCREEN_X if self.size[0] > config.SCREEN_X else 0, \
+        self.max_pos = self.size[0] - config.SCREEN_X if self.size[0] > config.SCREEN_X else 0, \
                       self.size[1] - config.SCREEN_Y if self.size[1] > config.SCREEN_Y else 0
 
     def move(self, dir):
-        x, y = self.posAt
+        """Function to move the map in a given direction 'dir' (up/down/left/right)"""
+        x, y = self.pos_at
         if dir == 'up':
-            self.posAt = (x, y - 1) if y > 0 else (x, y)
+            self.pos_at = (x, y - 1) if y > 0 else (x, y)
         elif dir == 'down':
-            self.posAt = (x, y + 1) if y < self.size[1] - config.SCREEN_Y - 1 else (x, y)
+            self.pos_at = (x, y + 1) if y < self.size[1] - config.SCREEN_Y - 1 else (x, y)
         elif dir == 'left':
-            self.posAt = (x - 1, y) if x > 0 else (x, y)
+            self.pos_at = (x - 1, y) if x > 0 else (x, y)
         elif dir == 'right':
-            self.posAt = (x + 1, y) if x < self.size[0] - config.SCREEN_X - 1 else (x, y)
+            self.pos_at = (x + 1, y) if x < self.size[0] - config.SCREEN_X - 1 else (x, y)
 
-    def genEmpty(self):
+    def gen_empty(self):
+        """Generates an empty map (just grass and air)"""
         # blank out any existing map
-        self.layer0, self.layer1 = [], []
+        self.layer_0, self.layer_1 = [], []
         try:
             for y in range(0, self.size[1]):
-                self.layer0.append([])
-                self.layer1.append([])
+                self.layer_0.append([])
+                self.layer_1.append([])
                 for x in range(0, self.size[0]):
-                    self.layer0[y].append('GRASS')
-                    self.layer1[y].append('UI_EMPTY')
+                    self.layer_0[y].append('GRASS')
+                    self.layer_1[y].append('UI_EMPTY')
         except Exception, e:
             print "Failed at ({},{}) with max dimensions ({},{})".format(x, y, self.size[0], self.size[1])
             return None
 
-    def genRandom(self):
-        self.layer0, self.layer1 = [], []
+    def gen_random(self):
+        """Generates a map with a random selection of tiles."""
+        self.layer_0, self.layer_1 = [], []
         try:
             for y in range(0, self.size[1]):
-                self.layer0.append([])
-                self.layer1.append([])
+                self.layer_0.append([])
+                self.layer_1.append([])
                 for x in range(0, self.size[0]):
                     ground_types = ['GRASS', 'GROUND', 'GRASS', 'GRASS']
                     layer_types = ['UI_EMPTY', 'UI_EMPTY', 'UI_EMPTY', 'TREES']
                     number = random.randint(0, 3)
                     number2 = random.randint(0, 3)
-                    self.layer0[y].append(ground_types[number])
-                    self.layer1[y].append(layer_types[number2])
+                    self.layer_0[y].append(ground_types[number])
+                    self.layer_1[y].append(layer_types[number2])
         except Exception, e:
             print "Failed at ({},{}) with max dimensions ({},{})".format(x, y, self.size[0], self.size[1])
             return None
 
-    def genIsland(self):
+    def gen_island(self):
+        """Generates an island map."""
         #image = generators.MainGenerator().generateIsland((320,250), "mixed", 1.5).tobytes("raw", "RGB")
         #surface = pygame.image.fromstring(image, image.get_size(), 'RGB')
         surface = generators.MainGenerator().generateIsland(7)
-        self.genFromImage(surface, surface.get_size())
+        self.gen_from_image(surface, surface.get_size())
 
-    def genFromImage(self, surface, max_size):
+    def gen_from_image(self, surface, max_size):
+        """"Generates a map from an image. All generators will generate an image which will then be passed into
+        This function to generate the playable map."""
         size = surface.get_size()
         dimensions = (0, 0)
 
@@ -191,7 +219,7 @@ class Map:
 
         self.set_size(dimensions)
 
-        self.genEmpty()
+        self.gen_empty()
 
 
         for x in range(self.size[0]):
@@ -213,27 +241,78 @@ class Map:
                 else:
                     tile = 'SNOW'
 
-                self.layer0[y][x] = tile
+                self.layer_0[y][x] = tile
+
+    def define_islands(self):
+        """Explores a map and builds an array of islands it discovers."""
+        islands = []
+        visited_tiles = []
+        for y in range(0, self.size[1]):
+            for x in range(0, self.size[0]):
+                if (x,y) in visited_tiles:
+                    continue
+                if self.get((x,y))['layer_0'] not in self.impassable:
+                    island_tiles = []
+                    self.find_island_boundaries(visited_tiles, island_tiles, (x,y))
+                    islands.append(island_tiles)
+        self.islands = islands
+
+    def find_island_boundaries(self, visited_tiles, island_tiles, loc):
+        """Walks around the map exploring an island to discover its boundaries."""
+        x,y = loc
+        # Quit if we've already logged this tile
+        if loc in island_tiles or loc in visited_tiles:
+            return
+
+        visited_tiles.append(loc)
+        island_tiles.append(loc)
+
+        # Spread out recursively and find all the tiles that we can
+        if x > 0:
+            if self.get((x-1,y))['layer_0'] not in self.impassable:
+                self.find_island_boundaries(visited_tiles, island_tiles, (x-1,y))
+        if x < self.size[0]:
+            if self.get((x+1, y))['layer_0'] not in self.impassable:
+                self.find_island_boundaries(visited_tiles, island_tiles, (x+1,y))
+
+        if y > 0:
+            if self.get((x,y-1))['layer_0'] not in self.impassable:
+                self.find_island_boundaries(visited_tiles, island_tiles, (x,y-1))
+        if y < self.size[0]:
+            if self.get((x, y+1))['layer_0'] not in self.impassable:
+                self.find_island_boundaries(visited_tiles, island_tiles, (x,y+1))
+
+    def generateForest(self, map):
+        pass
+
+    def growTrees(self, map, direction):
+        pass
 
     def get(self, loc):
+        """Returns the tiles available at the given location loc"""
         x, y = loc
         if x < 0 or y < 0 or x > self.size[0] - 1 or y > self.size[1] - 1:
             return None
         else:
-            return self.tilemap[x][y]
+            return {
+                'layer_0': self.layer_0[y][x],
+                'layer_1': self.layer_1[y][x]
+            }
 
     def draw(self, screen, offset):
-        self.visibleTiles = []
+        """Draws the visible map on the input screen with a given offset."""
+
+        self.visible_tiles = []
 
         # if draw coordinates are outside the maximum position, set them back
         # failsafe if the prevention of moving the map does not work
-        if self.posAt[0] > self.maxPos[0]:
-            self.posAt = (self.maxPos[0], self.posAt[1])
+        if self.pos_at[0] > self.max_pos[0]:
+            self.pos_at = (self.max_pos[0], self.pos_at[1])
 
-        if self.posAt[1] > self.maxPos[1]:
-            self.posAt = (self.posAt[0], self.maxPos[1])
+        if self.pos_at[1] > self.max_pos[1]:
+            self.pos_at = (self.pos_at[0], self.max_pos[1])
 
-        posX, posY = self.posAt
+        posX, posY = self.pos_at
         active_tile = {}
         for y in range(posY, config.SCREEN_Y + posY):
             if self.size[1] < posY:
@@ -247,8 +326,8 @@ class Map:
 
                     coords = ((x - posX) * config.TILE_W) + config.SIDEBAR_WIDTH, (y - posY) * config.TILE_H + config.STATUSBAR_HEIGHT
 
-                    tile0 = self.layer0[y][x]
-                    tile1 = self.layer1[y][x]
+                    tile0 = self.layer_0[y][x]
+                    tile1 = self.layer_1[y][x]
 
                     active_tile = {
                         'coords': coords,
@@ -256,7 +335,7 @@ class Map:
                         'rect': pygame.Rect(coords[0], coords[1], config.TILE_W, config.TILE_H),
                         'map_xy': (x, y)
                     }
-                    self.visibleTiles.append(active_tile)
+                    self.visible_tiles.append(active_tile)
 
                     screen.blit(self.tileset.get(tile0), coords)
 
@@ -267,15 +346,16 @@ class Map:
                         tile_dir = ""
                         accepted_connections = [tile1]
                         if tile1 == "RIVER":
+                            # Allow rivers to connect to the shore or oceans
                             accepted_connections.append("SHORE")
                             accepted_connections.append("OCEAN")
-                        if y == 0 or self.layer0[y - 1][x] in accepted_connections or self.layer1[y - 1][x] in accepted_connections:
+                        if y == 0 or self.layer_0[y - 1][x] in accepted_connections or self.layer_1[y - 1][x] in accepted_connections:
                             tile_dir += "t"
-                        if y == self.size[1] or self.layer0[y + 1][x] in accepted_connections or self.layer1[y + 1][x] in accepted_connections:
+                        if y == self.size[1] or self.layer_0[y + 1][x] in accepted_connections or self.layer_1[y + 1][x] in accepted_connections:
                             tile_dir += "b"
-                        if x == 0 or self.layer0[y][x - 1] in accepted_connections or self.layer1[y][x - 1] in accepted_connections:
+                        if x == 0 or self.layer_0[y][x - 1] in accepted_connections or self.layer_1[y][x - 1] in accepted_connections:
                             tile_dir += "l"
-                        if x == self.size[0] or self.layer0[y][x + 1] in accepted_connections or self.layer1[y][x + 1] in accepted_connections:
+                        if x == self.size[0] or self.layer_0[y][x + 1] in accepted_connections or self.layer_1[y][x + 1] in accepted_connections:
                             tile_dir += "r"
 
                         value_table = {
@@ -310,12 +390,12 @@ class Map:
                     possible_cursor = pygame.Surface((20,20))
                     possible_cursor.set_alpha(120)
                     if(self.destroy):
-                        if self.layer1[y][x] != 'UI_EMPTY':
+                        if self.layer_1[y][x] != 'UI_EMPTY':
                             possible_cursor.fill(config.COLOR_R)
                         else:
                             possible_cursor.set_alpha(0)
                     else:
-                        possible_cursor.fill(config.COLOR_G if self.layer1[y][x] == 'UI_EMPTY' else config.COLOR_GRAY)
+                        possible_cursor.fill(config.COLOR_G if self.layer_1[y][x] == 'UI_EMPTY' else config.COLOR_GRAY)
                     screen.blit(possible_cursor, (active_tile['coords'][0]+2, active_tile['coords'][1]+2))
                     screen.blit(self.tileset.get('CURSOR'), active_tile['coords'])
 
