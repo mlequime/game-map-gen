@@ -443,7 +443,7 @@ class GameMapGenerator:
                 self.map.layer_1.append([])
                 for x in range(0, self.map.size[0]):
                     ground_types = ['GRASS', 'GROUND', 'GRASS', 'GRASS']
-                    layer_types = ['UI_EMPTY', 'UI_EMPTY', 'UI_EMPTY', 'TREES']
+                    layer_types = ['UI_EMPTY', 'UI_EMPTY', 'UI_EMPTY', 'TREE S']
                     number = random.randint(0, 3)
                     number2 = random.randint(0, 3)
                     self.map.layer_0[y].append(ground_types[number])
@@ -725,13 +725,13 @@ class GameMapGenerator:
 
                 # generate some river deltas if possible
                 if x > 0 and self.map.get((x - 1, y))['layer_0'] not in self.map.impassable:
-                    river_set.append((x - 1, y))
+                    self.draw_river(surface, (x - 1, y), river_set)
                 if x < self.map.size[0] - 1 and self.map.get((x + 1, y))['layer_0'] not in self.map.impassable:
-                    river_set.append((x + 1, y))
+                    self.draw_river(surface, (x + 1, y), river_set)
                 if y > 0 and self.map.get((x, y - 1))['layer_0'] not in self.map.impassable:
-                    river_set.append((x, y - 1))
+                    self.draw_river(surface, (x, y - 1), river_set)
                 if y < self.map.size[1] - 1 and self.map.get((x, y + 1))['layer_0'] not in self.map.impassable:
-                    river_set.append((x, y + 1))
+                    self.draw_river(surface, (x, y + 1), river_set)
 
                 # success!
                 return True
