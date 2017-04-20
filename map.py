@@ -5,8 +5,11 @@ from noiselib import fBm, simplex_noise2
 from noiselib.modules.main import RescaleNoise
 from noiselib.modules.surfaces import PixelArray, RGBLerpNoise
 
-import pygame
+import sys
+import math
 import random
+
+import pygame
 
 import config
 import generators
@@ -112,6 +115,10 @@ class Map:
         self.max_pos = (0,0)
         self.visible_tiles = []
 
+        # map generation variables
+        self.rainfall = 2
+        self.sea_level = 2
+
         # Sets the map to the given dimensions
         self.set_size(dim)
 
@@ -130,14 +137,12 @@ class Map:
         self.layer_0 = []
         self.layer_1 = []
 
-        # A list of all the landmasses
+        # A list of all the landmasses, and the playable landmasses
         self.islands = []
+        self.playable_islands = []
 
         # Generate an island
         self.gen_island()
-
-        # Define the islands
-        self.define_islands()
 
     def set_size(self, size):
         self.size = size
@@ -196,6 +201,15 @@ class Map:
         surface = generators.MainGenerator().generateIsland(7)
         self.gen_from_image(surface, surface.get_size())
 
+
+
+        # Define the islands
+        self.define_islands()
+        # Generate rivers
+        self.gen_rivers(surface)
+        # Generate forests
+        self.gen_forests()
+
     def gen_from_image(self, surface, max_size):
         """"Generates a map from an image. All generators will generate an image which will then be passed into
         This function to generate the playable map."""
@@ -245,6 +259,9 @@ class Map:
 
     def define_islands(self):
         """Explores a map and builds an array of islands it discovers."""
+
+        # Change the recursion limit to permit the scanning of the map
+        sys.setrecursionlimit(20000)
         islands = []
         visited_tiles = []
         for y in range(0, self.size[1]):
@@ -255,38 +272,223 @@ class Map:
                     island_tiles = []
                     self.find_island_boundaries(visited_tiles, island_tiles, (x,y))
                     islands.append(island_tiles)
-        self.islands = islands
+        self.islands = sorted(islands, key=len)
+        self.islands.reverse()
+        self.playable_islands = [x for x in self.islands if len(x) > 50]
+
+        # Return the recursion limit to normal value
+        sys.setrecursionlimit(1000)
 
     def find_island_boundaries(self, visited_tiles, island_tiles, loc):
         """Walks around the map exploring an island to discover its boundaries."""
         x,y = loc
         # Quit if we've already logged this tile
-        if loc in island_tiles or loc in visited_tiles:
+        if loc in visited_tiles:
+            return
+        visited_tiles.append(loc)
+
+        # Quit if the tile is water or ice
+        if self.get(loc)['layer_0'] in self.impassable:
             return
 
-        visited_tiles.append(loc)
+        # Quit if we've already logged this tile in this current island (failsafe)
+        if loc in island_tiles:
+            return
         island_tiles.append(loc)
 
         # Spread out recursively and find all the tiles that we can
         if x > 0:
-            if self.get((x-1,y))['layer_0'] not in self.impassable:
+            if self.get((x-1,y))['layer_0'] not in self.impassable and (x-1,y) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x-1,y))
         if x < self.size[0]:
-            if self.get((x+1, y))['layer_0'] not in self.impassable:
+            if self.get((x+1, y))['layer_0'] not in self.impassable and (x+1,y) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x+1,y))
 
         if y > 0:
-            if self.get((x,y-1))['layer_0'] not in self.impassable:
+            if self.get((x,y-1))['layer_0'] not in self.impassable and (x,y-1) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x,y-1))
         if y < self.size[0]:
-            if self.get((x, y+1))['layer_0'] not in self.impassable:
+            if self.get((x, y+1))['layer_0'] not in self.impassable and (x,y+1) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x,y+1))
 
-    def generateForest(self, map):
-        pass
+    def gen_rivers(self, surface):
+        """Generates rivers on the map, using the surface heights as a basis."""
+        if len(self.islands) == 0:
+            self.define_islands()
 
-    def growTrees(self, map, direction):
-        pass
+        for island in self.islands:
+            if len(island) < 40:
+                continue
+
+            min_rivers = 1
+            if len(island) > ((self.size[0] + self.size[1])/2) ** 1.15:
+                min_rivers = 2
+
+            # calculate a maximum number of forests
+            rivers_count = min(min_rivers + 3, int(math.sqrt(len(island)) / 2))
+            rivers_count = random.randint(min_rivers, rivers_count)
+
+            height_values = [{'value': self.averageRGB(surface.get_at(x)), 'loc': x} for x in island]
+            height_values = sorted(height_values,key=lambda x: x['value'])
+
+            while rivers_count > 0:
+                start_point = height_values[random.randint(int(len(height_values) * 0.7), int(len(height_values) * 0.95))]['loc']
+                river_set = []
+                if self.draw_river(surface, start_point, river_set):
+                    rivers_count -= 1
+                    for loc in river_set:
+                        self.set(loc, 'layer_1', 'RIVER')
+                else:
+                    river_set = []
+
+    def draw_river(self, surface, loc, river_set):
+
+        # Get the location and ensure it's within boundaries
+        x,y = loc
+        if x < 0 or y < 0 or x > self.size[0] - 1 or y > self.size[1] - 1:
+            return False
+
+        if self.get(loc)['layer_1'] == 'RIVER' or loc in river_set:
+            return False
+
+        river_set.append(loc)
+
+        current_val = self.averageRGB(surface.get_at(loc))
+
+        possible_dirs = []
+
+        if y > 0 and self.averageRGB(surface.get_at((x,y-1))) <= current_val:
+            possible_dirs.append('up')
+        if y < self.size[1] - 1 and self.averageRGB(surface.get_at((x,y+1))) <= current_val:
+            possible_dirs.append('down')
+        if x > 0 and self.averageRGB(surface.get_at((x-1,y))) <= current_val:
+            possible_dirs.append('left')
+        if x < self.size[0] - 1 and self.averageRGB(surface.get_at((x+1,y))) <= current_val:
+            possible_dirs.append('right')
+
+
+        if len(possible_dirs) == 0:
+            return False
+
+        # % chance of river splitting into multiple directions
+        if random.randint(1,4) < 4:
+            possible_dirs = [possible_dirs[random.randint(0,len(possible_dirs)-1)]]
+
+        for dir in possible_dirs:
+            if dir == 'up':
+                loc = (x, y-1)
+            elif dir == 'down':
+                loc = (x, y+1)
+            elif dir == 'left':
+                loc = (x-1, y)
+            elif dir == 'right':
+                loc = (x+1, y)
+
+            if self.get(loc)['layer_0'] == 'SHORE' or self.get(loc)['layer_0'] == 'OCEAN':
+
+                # generate some river deltas if possible
+                if x > 0 and self.get((x-1,y))['layer_0'] not in self.impassable:
+                    river_set.append((x-1, y))
+                if x < self.size[0] - 1 and self.get((x+1,y))['layer_0'] not in self.impassable:
+                    river_set.append((x+1, y))
+                if y > 0 and self.get((x,y-1))['layer_0'] not in self.impassable:
+                    river_set.append((x,y-1))
+                if y < self.size[1] - 1 and self.get((x,y+1))['layer_0'] not in self.impassable:
+                    river_set.append((x,y+1))
+
+                # success!
+                return True
+
+            return self.draw_river(surface, loc, river_set)
+
+    def gen_forests(self):
+        """Generates forests on the larger islands of the map."""
+        if len(self.islands) == 0:
+            self.define_islands()
+
+        for island in self.islands:
+            if len(island) < 30:
+                continue
+
+            min_forests = 0
+            # If it's a particularly big island relative to the map size, we should need a few forests
+            if len(island) > ((self.size[0] + self.size[1])/2) ** 1.15:
+                min_forests = 3
+
+            # calculate a maximum number of forests
+            forest_count = max(min_forests + 2, int(math.sqrt(len(island)) / 1.5))
+
+            if forest_count < min_forests:
+                forest_count = min_forests
+            else:
+                forest_count = random.randint(min_forests,forest_count)
+
+            counted_tiles = []
+            while forest_count > 0:
+                # pick a random start point on the island
+                loc = island[random.randint(0,len(island)-1)]
+
+                # keep a list of tiles we've visited
+                if loc in counted_tiles:
+                    continue
+                # forests can only start on grass
+                if self.get(loc)['layer_0'] != 'GRASS':
+                    counted_tiles.append(loc)
+                    continue
+                # if counted every tile on the island and there's no grass, exit
+                if len(counted_tiles) >= len(island):
+                    break
+
+                self.grow_trees(loc, 'up', random.randint(6,12))
+                self.grow_trees(loc, 'down', random.randint(6,12))
+                self.grow_trees(loc, 'left', random.randint(6,12))
+                self.grow_trees(loc, 'right', random.randint(6,12))
+                forest_count -= 1
+
+
+
+    def grow_trees(self, loc, direction, weight):
+        """Part of the forest generation. Grows a branch of a forest in a given direction."""
+
+        # Get the location and ensure it's within boundaries
+        x,y = loc
+        if x < 0 or y < 0 or x > self.size[0] - 1 or y > self.size[1] - 1:
+            return
+
+        # trees should only grow on grass, not sand or other land types
+        tile = self.get(loc)
+        if tile['layer_0'] != 'GRASS' or tile['layer_1'] not in ['UI_EMPTY', 'TREES']:
+            return
+
+        self.set(loc, 'layer_1', 'TREES')
+
+        if weight == 1:
+            return
+
+        new_direction = direction
+        # prefer for the branches to spread in the same direction, but give it a small chance of making a 90deg turn
+        # in either direction
+        for i in range(1,random.randint(1,3)):
+            if random.randint(1,3) > 2:
+                if direction == 'up':
+                    new_direction = ['left','right'][random.randint(0,1)]
+                elif direction == 'down':
+                    new_direction = ['left','right'][random.randint(0,1)]
+                elif direction == 'left':
+                    new_direction = ['up','down'][random.randint(0,1)]
+                elif direction == 'right':
+                    new_direction = ['up','down'][random.randint(0,1)]
+
+            # recursively call the grow function
+            if new_direction == 'up':
+                self.grow_trees((loc[0], loc[1]-1), new_direction, weight-1)
+            if new_direction == 'down':
+                self.grow_trees((loc[0], loc[1]+1), new_direction, weight-1)
+            if new_direction == 'left':
+                self.grow_trees((loc[0]-1, loc[1]), new_direction, weight-1)
+            if new_direction == 'right':
+                self.grow_trees((loc[0]+1, loc[1]), new_direction, weight-1)
+
 
     def get(self, loc):
         """Returns the tiles available at the given location loc"""
@@ -298,6 +500,23 @@ class Map:
                 'layer_0': self.layer_0[y][x],
                 'layer_1': self.layer_1[y][x]
             }
+
+    def set(self, loc, layer, tile):
+        """Sets the tile to the given value at location loc, on the layer specified"""
+
+        # Get the location and ensure it's within boundaries
+        x, y = loc
+        if x < 0 or y < 0 or x > self.size[0] - 1 or y > self.size[1] - 1 or layer not in ['layer_0', 'layer_1']:
+            return
+        else:
+            if layer == 'layer_0':
+                self.layer_0[loc[1]][loc[0]] = tile
+            elif layer == 'layer_1':
+                self.layer_1[loc[1]][loc[0]] = tile
+
+    def averageRGB(self, color):
+        """Averages the RGB values into a grayscale color."""
+        return int((color.r + color.g + color.b) / 3)
 
     def draw(self, screen, offset):
         """Draws the visible map on the input screen with a given offset."""

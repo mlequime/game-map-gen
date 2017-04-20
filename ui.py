@@ -25,7 +25,6 @@ class MenuScreen:
 
 
         self.new_button = TitleButton("New Game", None, button_bg)
-        self.load_button = TitleButton("Load Save", None, button_bg)
         self.exit_button = TitleButton("Quit Nations", None, button_bg)
 
         self.callback = callback
@@ -70,6 +69,7 @@ class MenuScreen:
         print("closing")
 
 class TitleButton:
+    """Class to represent a button on the title screen"""
     def __init__(self, text, action, button_bg):
         self.action = action
         self.text = text
@@ -87,7 +87,7 @@ class TitleButton:
             screen.blit(label, (offsetX + (self.width / 2 - label.get_size()[0] /2), posY + 8))
 
 class GameScreen:
-
+    """Class to represent the in-game screen once the player has initialized the game"""
     def __init__(self, screen, callback):
         # set up UI
         self.screen = screen
