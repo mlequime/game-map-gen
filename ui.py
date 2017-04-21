@@ -9,6 +9,8 @@ from mayor import Mayor
 
 
 class MenuScreen:
+    """The menu screen where the user selects the action they would like to take"""
+
     def __init__(self, screen, callback):
         self.screen = screen
 
@@ -36,12 +38,12 @@ class MenuScreen:
             clock.tick(30)
             self.screen.fill((255, 255, 255))
             self.screen.blit(self.bg, (0, 0))
-            self.screen.blit(self.logo, ((config.SCREEN_X * config.TILE_W / 2) - \
+            # Center the logo in the middle of the screen
+            self.screen.blit(self.logo, (((config.SCREEN_X * config.TILE_W) / 2) + config.SIDEBAR_WIDTH - \
                                          (self.logo.get_rect().width / 2), 100))
 
             self.new_button.draw(self.screen, 300)
-            self.load_button.draw(self.screen, 350)
-            self.exit_button.draw(self.screen, 400)
+            self.exit_button.draw(self.screen, 350)
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -55,9 +57,6 @@ class MenuScreen:
 
             pygame.display.flip()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
     def close(self):
         self.title_music.fadeout(50)
         pygame.mixer.quit()
@@ -65,6 +64,9 @@ class MenuScreen:
         del self.logo
         del self.title_music
         print("closing")
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 
 class TitleButton:
@@ -114,20 +116,27 @@ class GameScreen:
         self.map = map.Map(tileset, (80, 40))
 
         self.inventory = [
-            Purchasable("ROAD", "Road", None, 200),
+            Purchasable("ROAD", "Road", None, 100),
             Purchasable("HOUSE", "Small House", buildings.House()),
-            Purchasable("BIGHOUSE", "Large House", buildings.BigHouse(), None, self.player.population > 100),
-            Purchasable("APARTMENTS", "Apartments", buildings.Apartments(), self.player.population > 600),
+            Purchasable("BIGHOUSE", "Large House", buildings.BigHouse()),
+            Purchasable("APARTMENTS", "Apartments", buildings.Apartments()),
             Purchasable("STORE", "Store", buildings.Store()),
-            Purchasable("POLICE", "Police Station", buildings.PoliceStation(), self.player.population > 50),
-            Purchasable("FIRE", "Fire Station", buildings.FireStation(), self.player.population > 50),
+            Purchasable("POLICE", "Police Station", buildings.PoliceStation()),
+            Purchasable("FIRE", "Fire Station", buildings.FireStation()),
+            Purchasable("MINE", "Coal Mine", buildings.CoalMine()),
+            Purchasable("OILRIG", "Oil Rig", buildings.OilRig()),
             Bulldozer()
         ]
 
+        # Allow placing of special items for debug purposes
         if config.DEBUG:
             self.inventory.append(Purchasable("RIVER", "River", None, 0))
             self.inventory.append(Purchasable("TREES", "Forest", None, 0))
             self.inventory.append(Purchasable("SHORE", "Shore", None, 0))
+
+            self.inventory.append(Purchasable("GRASSCOAL", "Coal", None, 0))
+            self.inventory.append(Purchasable("GRASSOIL", "Oil", None, 0))
+
 
         self.selected_item = self.inventory[0]
 
@@ -178,16 +187,34 @@ class GameScreen:
 
     def draw(self):
         try:
+            # Draw the map and any relevant UI
             self.map.draw(self.screen, (0, 0))
 
+            # If there's an active tile, draw its details
+            if self.map.tile_at != None:
+                text = "{}: ({}, {})".format(self.map.tile_at['coords'], self.map.tile_at['tile']['layer_0'],
+                                             self.map.tile_at['tile']['layer_1'] if self.map.tile_at['tile'][
+                                                                                    'layer_1'] != 'UI_EMPTY' else 'None')
+                tile_at_shadow = config.FONT.render(text, 1, pygame.Color("black"))
+                tile_at_text = config.FONT.render(text, 1, pygame.Color("white"))
+
+                self.screen.blit(tile_at_shadow, (config.SIDEBAR_WIDTH + 9, config.SCREEN_SIZE[1] - 17))
+                self.screen.blit(tile_at_text, (config.SIDEBAR_WIDTH + 8, config.SCREEN_SIZE[1] - 18))
+
+
+            # Draw the game screen interface
+
+            # The player's money
             money = config.FONT.render("${}".format(self.player.money), 1,
                                        config.COLOR_G if self.player.money > 0 else config.COLOR_R)
             self.screen.blit(money, (self.screen.get_size()[0] - money.get_size()[0] - 10, 4))
 
+            # The game population
             population = config.FONT.render(
                 "Population: {} | Jobs: {}".format(self.player.population, self.player.jobs), 1, (245, 245, 245))
             self.screen.blit(population, (self.screen.get_size()[0] / 2 - population.get_size()[0] / 2, 4))
 
+            # The police and fire safety statuses
             police_safety = config.FONT.render(
                 "Police: {}".format("Good" if self.player.police_safety >= self.player.population else "Bad"), 1,
                 config.COLOR_G if self.player.police_safety >= self.player.population else config.COLOR_R)
@@ -198,17 +225,26 @@ class GameScreen:
             self.screen.blit(police_safety, (4, 4))
             self.screen.blit(fire_safety, (4 + police_safety.get_size()[0] + 20, 4))
 
+            # Start point for inventory drawing (this is incremented in the loop)
             x = 4
             y = 22
+
             for item in self.inventory:
                 rect = pygame.Rect(x, y, 24, 24)
                 pygame.draw.rect(self.screen, (200, 200, 200) if self.selected_item != item else (255, 255, 55), rect)
+
+                # If we are hovering over the current inventory item
                 if rect.collidepoint(pygame.mouse.get_pos()):
                     pygame.draw.rect(self.screen, (255, 255, 55), rect, 1)
+                    # Show a label with the item ID and price (if a price exists)
+                    item_and_price = config.FONT.render(
+                        "{}{}".format(item.text, " (${})".format(item.price) if item.price > 0 else ""), 1,
+                        pygame.Color("white") if self.player.money > item.price else config.COLOR_R)
+
+                    pygame.draw.rect(self.screen, (0, 0, 0), (x + 30, y, item_and_price.get_rect().width + 10, 18))
+                    self.screen.blit(item_and_price,(x + 35, y + 2))
 
                 icon = self.map.tileset.get(item.ID)
-                if item.requirement == False:
-                    icon.set_alpha(50)
                 self.screen.blit(icon, (x, y))
                 item.coords = (x, y)
                 y += 30
@@ -219,7 +255,7 @@ class GameScreen:
 
     def click(self, pos):
         for item in self.inventory:
-            if item.coords == None or item.requirement == False:
+            if item.coords == None:
                 pass
             elif pygame.Rect(item.coords[0], item.coords[1], config.TILE_W, config.TILE_H).collidepoint(pos):
                 self.map.destroy = item.ID == 'BULLDOZER'
@@ -262,6 +298,7 @@ class GameScreen:
 
 class Purchasable:
     """Represents a purchasable item from the left-hand side catalogue."""
+
     def __init__(self, ID, text, building, price=None, requirement=True):
         self.ID = ID
         self.text = text
@@ -272,8 +309,9 @@ class Purchasable:
 
 
 class Bulldozer(Purchasable):
-    """Reprsents the in-game bulldozer, which appears in the catalogue of items but has a completely custom
+    """Represents the in-game bulldozer, which appears in the catalogue of items but has a completely custom
     behaviour."""
+
     def __init__(self):
         Purchasable.__init__(self, 'BULLDOZER', 'Destroy', None, None)
         self.coords = None

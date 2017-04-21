@@ -95,8 +95,18 @@ class Tileset:
                 'FIRE': 61,
                 'MAYORS': 62,
 
-                'BULLDOZER': 66
+                'BULLDOZER': 66,
+                'MINE': 68,
+                'OILRIG': 69,
 
+                'GROUNDCOAL': 72,
+                'GRASSCOAL': 73,
+                'SANDCOAL': 74,
+
+                'GROUNDOIL': 76,
+                'GRASSOIL': 77,
+                'SANDOIL': 78,
+                'WATEROIL': 79
             }
 
 
@@ -113,10 +123,16 @@ class Tileset:
 
 class Map:
     def __init__(self, tileset, dim):
+
         # Initial setup of variables
-        self.size = (0,0)
-        self.max_pos = (0,0)
+        self.size = (0, 0)
+        self.max_pos = (0, 0)
         self.visible_tiles = []
+        self.tile_at = None
+
+        # The current top-left corner position of the viewfinder, i.e. where to draw the map from
+        self.start_pos = (0, 0)
+        self.pos_at = [0, 0]
 
         # map generation variables
         self.rainfall = 2
@@ -128,13 +144,15 @@ class Map:
         # The tileset used by the map
         self.tileset = tileset
 
-        # The current top-left corner position of the viewfinder, i.e. where to draw the map from
-        self.pos_at = [0, 0]
         # A settings which indicates whether the user is destroying an object or
         self.destroy = False
 
         # The tiles which it is not possible to place objects on
-        self.impassable = ['OCEAN','SHORE','ICE']
+        self.impassable = ['OCEAN', 'SHORE', 'ICE']
+
+        # Modified ores
+        self.coal = ['GROUNDCOAL','GRASSCOAL','SANDCOAL']
+        self.oil = ['GROUNDOIL','GRASSOIL','SANDOIL','WATEROIL']
 
         # The two tile layers for the map instance
         self.layer_0 = []
@@ -154,7 +172,7 @@ class Map:
     def set_size(self, size):
         self.size = size
         self.max_pos = self.size[0] - config.SCREEN_X if self.size[0] > config.SCREEN_X else 0, \
-                      self.size[1] - config.SCREEN_Y if self.size[1] > config.SCREEN_Y else 0
+                       self.size[1] - config.SCREEN_Y if self.size[1] > config.SCREEN_Y else 0
 
     def move(self, dir):
         """Function to move the map in a given direction 'dir' (up/down/left/right)"""
@@ -167,7 +185,6 @@ class Map:
             self.pos_at = (x - 1, y) if x > 0 else (x, y)
         elif dir == 'right':
             self.pos_at = (x + 1, y) if x < self.size[0] - config.SCREEN_X - 1 else (x, y)
-
 
     def get(self, loc):
         """Returns the tiles available at the given location loc"""
@@ -192,17 +209,17 @@ class Map:
                 self.layer_0[loc[1]][loc[0]] = tile
             elif layer == 'layer_1':
                 self.layer_1[loc[1]][loc[0]] = tile
-                
+
     def add_to_tile(self, loc):
         if self.can_add_to_tile(self.selected_item.ID, loc):
             self.set(loc, 'layer_1', self.selected_item.ID)
             return True
         return False
-    
+
     def can_add_to_tile(self, tile, loc):
-        x,y = loc
+        x, y = loc
         if self.destroy:
-            if self.get(loc)['layer_1'] in ['UI_EMPTY','RIVER']:
+            if self.get(loc)['layer_1'] in ['UI_EMPTY', 'RIVER']:
                 return False
             return True
         else:
@@ -215,22 +232,22 @@ class Map:
                 if config.DEBUG and pygame.key.get_mods() and pygame.KMOD_SHIFT:
                     return True
                 # Roads can only be placed if there is an adjacent road
-                up,down,left,right = False,False,False,False
-                if y > 0 and self.get((loc[0], loc[1]-1))['layer_1'] == 'ROAD':
+                up, down, left, right = False, False, False, False
+                if y > 0 and self.get((loc[0], loc[1] - 1))['layer_1'] == 'ROAD':
                     left = True
-                if y < self.size[0] - 1 and self.get((loc[0],loc[1]+1))['layer_1'] == 'ROAD':
+                if y < self.size[0] - 1 and self.get((loc[0], loc[1] + 1))['layer_1'] == 'ROAD':
                     right = True
-                if x > 0 and self.get((loc[0]-1, loc[1]))['layer_1'] == 'ROAD':
+                if x > 0 and self.get((loc[0] - 1, loc[1]))['layer_1'] == 'ROAD':
                     left = True
-                if x < self.size[0] - 1 and self.get((loc[0]+1,loc[1]))['layer_1'] == 'ROAD':
+                if x < self.size[0] - 1 and self.get((loc[0] + 1, loc[1]))['layer_1'] == 'ROAD':
                     right = True
                 return up or down or left or right
-            elif tile in ['HOUSE','BIGHOUSE','APARTMENTS','STORE','POLICE','FIRE','MINE','RIG']:
+            elif tile in ['HOUSE', 'BIGHOUSE', 'APARTMENTS', 'STORE', 'POLICE', 'FIRE', 'MINE', 'RIG']:
                 # Check if the building is near a road (2 tiles). Buildings must be placed near to roads.
                 near_road = False
-                for x in range(loc[0]-2,loc[0]+3):
-                    for y in range(loc[1]-2,loc[1]+3):
-                        if self.get((x,y))['layer_1'] == 'ROAD':
+                for x in range(loc[0] - 2, loc[0] + 3):
+                    for y in range(loc[1] - 2, loc[1] + 3):
+                        if self.get((x, y))['layer_1'] == 'ROAD':
                             near_road = True
                 return near_road
             return True
@@ -239,6 +256,7 @@ class Map:
         """Draws the visible map on the input screen with a given offset."""
 
         self.visible_tiles = []
+        self.tile_at = None
 
         # if draw coordinates are outside the maximum position, set them back
         # failsafe if the prevention of moving the map does not work
@@ -260,7 +278,8 @@ class Map:
 
                     # calculate offset here
 
-                    coords = ((x - posX) * config.TILE_W) + config.SIDEBAR_WIDTH, (y - posY) * config.TILE_H + config.STATUSBAR_HEIGHT
+                    coords = ((x - posX) * config.TILE_W) + config.SIDEBAR_WIDTH, (
+                    y - posY) * config.TILE_H + config.STATUSBAR_HEIGHT
 
                     tile0 = self.layer_0[y][x]
                     tile1 = self.layer_1[y][x]
@@ -285,13 +304,17 @@ class Map:
                             # Allow rivers to connect to the shore or oceans
                             accepted_connections.append("SHORE")
                             accepted_connections.append("OCEAN")
-                        if y == 0 or self.layer_0[y - 1][x] in accepted_connections or self.layer_1[y - 1][x] in accepted_connections:
+                        if y == 0 or self.layer_0[y - 1][x] in accepted_connections or self.layer_1[y - 1][
+                            x] in accepted_connections:
                             tile_dir += "t"
-                        if y == self.size[1] or self.layer_0[y + 1][x] in accepted_connections or self.layer_1[y + 1][x] in accepted_connections:
+                        if y == self.size[1] or self.layer_0[y + 1][x] in accepted_connections or self.layer_1[y + 1][
+                            x] in accepted_connections:
                             tile_dir += "b"
-                        if x == 0 or self.layer_0[y][x - 1] in accepted_connections or self.layer_1[y][x - 1] in accepted_connections:
+                        if x == 0 or self.layer_0[y][x - 1] in accepted_connections or self.layer_1[y][
+                                    x - 1] in accepted_connections:
                             tile_dir += "l"
-                        if x == self.size[0] or self.layer_0[y][x + 1] in accepted_connections or self.layer_1[y][x + 1] in accepted_connections:
+                        if x == self.size[0] or self.layer_0[y][x + 1] in accepted_connections or self.layer_1[y][
+                                    x + 1] in accepted_connections:
                             tile_dir += "r"
 
                         value_table = {
@@ -322,21 +345,30 @@ class Map:
                     raise Exception(
                         "Tilemap drawing failed at coordinates [{}, {}]. Exception rasied: {}".format(x, y, e))
 
+                # Draw the cursor over the currently hovered tile
                 if active_tile['rect'].collidepoint(pygame.mouse.get_pos()):
-                    possible_cursor = pygame.Surface((20,20))
+                    possible_cursor = pygame.Surface((20, 20))
                     possible_cursor.set_alpha(120)
-                    tile_at = self.get((x,y))
+                    self.tile_at = {
+                        'coords': (x, y),
+                        'tile': self.get((x, y))
+                    }
 
+                    # If no selected item, no cursor
                     if self.selected_item == None:
-                        possible_cursor.fill(config.COLOR_GRAY)
-                    elif(self.destroy):
-                        if tile_at['layer_1'] not in ['UI_EMPTY','RIVER']:
+                        possible_cursor.set_alpha(0)
+                    elif (self.destroy):
+                        # List of tiles that we cannot destroy
+                        if self.tile_at['tile']['layer_1'] not in ['UI_EMPTY', 'RIVER', 'MAYORS']:
                             possible_cursor.fill(config.COLOR_R)
                         else:
                             possible_cursor.set_alpha(0)
                     else:
-                        possible_cursor.fill(config.COLOR_G if self.can_add_to_tile(self.selected_item.ID, (x,y)) else config.COLOR_GRAY)
-                    screen.blit(possible_cursor, (active_tile['coords'][0]+2, active_tile['coords'][1]+2))
+                        can_place = True
+                        if self.selected_item.building != None:
+                            can_place = self.selected_item.building.can_place(self.tile_at['tile'])
+                        can_place = can_place and  self.can_add_to_tile(self.selected_item.ID, (x, y))
+                        possible_cursor.fill(config.COLOR_G if can_place else config.COLOR_GRAY)
+                    screen.blit(possible_cursor, (active_tile['coords'][0] + 2, active_tile['coords'][1] + 2))
                     screen.blit(self.tileset.get('CURSOR'), active_tile['coords'])
-
 
