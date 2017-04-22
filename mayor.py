@@ -1,3 +1,5 @@
+import random
+
 import pygame
 import config
 
@@ -11,11 +13,11 @@ class Mayor:
             'sfx': True
         }
 
-        self.money = 5000
-        if difficulty == "easy":
-            self.money = 10000
-        elif difficulty == "hard":
-            self.money = 2500
+        self.money = 6000
+        if difficulty == "low":
+            self.money = 15000
+        elif difficulty == "high":
+            self.money = 2000
 
         self.fire_safety = 1
         self.police_safety = 1
@@ -34,45 +36,87 @@ class Mayor:
         self.roads = 0
 
 
-    def addBuilding(self, building):
+    def add_building(self, building):
         if building.type != None:
             self.buildings[building.type].append(building)
 
-    def calculateExpenses(self):
-        expense = 0.00
+    def calc_expenses(self):
+        decrease = 0.00
 
-        expense += 0.01 * self.roads
+        decrease += 0.01 * self.roads
 
         for priv in self.buildings['priv']:
-            expense += priv.tax
+            decrease += priv.tax
 
-        self.money -= expense
+        return decrease
 
-    def calculateIncome(self):
+    def calc_income(self):
         increase = 0.00
-
+        job_counter = 0
+        
         for res in self.buildings['r']:
             increase += res.tax
 
-        for com in self.buildings['c']:
-            increase += com.tax
+        # only jobs which have people working for them produce tax
+        business = self.buildings['c'] + self.buildings['i']
+        counter = 0
+        while job_counter < self.population and counter < len(business):
+            random.shuffle(business)
+            for bus in business:
+                increase += bus.tax
+                job_counter += bus.jobs
+                counter += 1
+        return increase
 
-        self.money += increase
+    def positive_times(self):
+        if self.population <= 0:
+            return True
 
-    def calculate(self, calculate_services):
-        self.calculateExpenses()
-        self.calculateIncome()
+        if self.population / 2 > self.jobs:
+            return False
+
+        if self.fire_safety < self.population or self.police_safety < self.population:
+            return False
+
+        return True
+
+    def calc(self, calc_services):
+
+
         self.population = 0
         self.jobs = 0
+        
         for house in self.buildings['r']:
             self.population += house.population
 
         for business in self.buildings['c']:
             self.jobs += business.jobs
+        for business in self.buildings['i']:
+            self.jobs += business.jobs
+
         for priv in self.buildings['priv']:
             self.jobs += priv.jobs
 
-        if calculate_services:
+
+        decrease = self.calc_expenses()
+        increase = self.calc_income()
+
+
+        if decrease < increase:
+            increase = increase - decrease
+
+            # If the city is running smoothly, add all money
+            if self.positive_times():
+                self.money += increase
+            # Else 'punish' the player by reducing their income to 3/5th of its prior value
+            else:
+                self.money += increase * 0.6
+        else:
+            # Don't do this if they are losing money, however
+            self.money -= decrease
+            self.money += increase
+            
+        if calc_services:
             self.fire_safety = 40
             self.police_safety = 40
             for priv in self.buildings['priv']:

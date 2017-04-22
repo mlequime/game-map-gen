@@ -48,6 +48,7 @@ class Tileset:
                 'CURSOR': 13,
 
                 # items
+                'PALMTREE': 16,
                 'TREES': 17,
                 'ROCK': 18,
                 'RIVER': 19,
@@ -91,10 +92,12 @@ class Tileset:
                 'BIGHOUSE': 57,
                 'APARTMENTS': 58,
                 'STORE': 59,
-                'POLICE': 60,
-                'FIRE': 61,
-                'MAYORS': 62,
+                'BIGSTORE': 60,
+                'POLICE': 61,
+                'FIRE': 62,
+                'MAYORS': 63,
 
+                'UI_LOCKED': 64,
                 'BULLDOZER': 66,
                 'MINE': 68,
                 'OILRIG': 69,
@@ -122,7 +125,7 @@ class Tileset:
 
 
 class Map:
-    def __init__(self, tileset, dim):
+    def __init__(self, tileset, dim, data):
 
         # Initial setup of variables
         self.size = (0, 0)
@@ -151,8 +154,8 @@ class Map:
         self.impassable = ['OCEAN', 'SHORE', 'ICE']
 
         # Modified ores
-        self.coal = ['GROUNDCOAL','GRASSCOAL','SANDCOAL']
-        self.oil = ['GROUNDOIL','GRASSOIL','SANDOIL','WATEROIL']
+        self.coal = ['GROUNDCOAL', 'GRASSCOAL', 'SANDCOAL']
+        self.oil = ['GROUNDOIL', 'GRASSOIL', 'SANDOIL', 'WATEROIL']
 
         # The two tile layers for the map instance
         self.layer_0 = []
@@ -165,9 +168,8 @@ class Map:
         # The UI element to be placed
         self.selected_item = None
 
-        # Generate an island
-        mapgen = generators.GameMapGenerator(self)
-        mapgen.gen_island()
+        # Generate the map based on the input data
+        mapgen = generators.GameMapGenerator(self, data)
 
     def set_size(self, size):
         self.size = size
@@ -228,9 +230,6 @@ class Map:
             if self.get(loc)['layer_1'] != 'UI_EMPTY':
                 return False
             if tile == 'ROAD':
-                # Enable placing roads anywhere if debug key held
-                if config.DEBUG and pygame.key.get_mods() and pygame.KMOD_SHIFT:
-                    return True
                 # Roads can only be placed if there is an adjacent road
                 up, down, left, right = False, False, False, False
                 if y > 0 and self.get((loc[0], loc[1] - 1))['layer_1'] == 'ROAD':
@@ -242,8 +241,16 @@ class Map:
                 if x < self.size[0] - 1 and self.get((loc[0] + 1, loc[1]))['layer_1'] == 'ROAD':
                     right = True
                 return up or down or left or right
-            elif tile in ['HOUSE', 'BIGHOUSE', 'APARTMENTS', 'STORE', 'POLICE', 'FIRE', 'MINE', 'RIG']:
-                # Check if the building is near a road (2 tiles). Buildings must be placed near to roads.
+            elif tile in ['HOUSE', 'BIGHOUSE', 'APARTMENTS', 'STORE', 'POLICE', 'FIRE', 'MINE']:
+                # Check if the building is near a road (2 tiles).
+                # Buildings must be placed near to roads. Oil rigs are exempt.
+                near_road = False
+                for x in range(loc[0] - 2, loc[0] + 3):
+                    for y in range(loc[1] - 2, loc[1] + 3):
+                        if self.get((x, y))['layer_1'] == 'ROAD':
+                            near_road = True
+                return near_road
+            elif tile == 'OILRIG':
                 near_road = False
                 for x in range(loc[0] - 2, loc[0] + 3):
                     for y in range(loc[1] - 2, loc[1] + 3):
@@ -279,7 +286,7 @@ class Map:
                     # calculate offset here
 
                     coords = ((x - posX) * config.TILE_W) + config.SIDEBAR_WIDTH, (
-                    y - posY) * config.TILE_H + config.STATUSBAR_HEIGHT
+                        y - posY) * config.TILE_H + config.STATUSBAR_HEIGHT
 
                     tile0 = self.layer_0[y][x]
                     tile1 = self.layer_1[y][x]
@@ -367,8 +374,7 @@ class Map:
                         can_place = True
                         if self.selected_item.building != None:
                             can_place = self.selected_item.building.can_place(self.tile_at['tile'])
-                        can_place = can_place and  self.can_add_to_tile(self.selected_item.ID, (x, y))
+                        can_place = can_place and self.can_add_to_tile(self.selected_item.ID, (x, y))
                         possible_cursor.fill(config.COLOR_G if can_place else config.COLOR_GRAY)
                     screen.blit(possible_cursor, (active_tile['coords'][0] + 2, active_tile['coords'][1] + 2))
                     screen.blit(self.tileset.get('CURSOR'), active_tile['coords'])
-

@@ -17,10 +17,11 @@ def run():
     pygame.key.set_repeat(250, 10)
 
     config.FONT = pygame.font.Font("src/Bugsmirc05.ttf", 16)
+    config.TITLE_FONT = pygame.font.Font("src/Bugsmirc05.ttf", 32)
 
-    open_screen(screen, 'game', False)
+    open_screen(screen, 'menu', False)
 
-def open_screen(screen, opt, close):
+def open_screen(screen, opt, close, data=None):
     if close:
         for item in screens:
             item.close()
@@ -31,8 +32,11 @@ def open_screen(screen, opt, close):
         screens.append(ms)
         ms.open()
     elif(opt == "game"):
-        gs = ui.GameScreen(screen, open_screen)
+        gs = ui.GameScreen(screen, open_screen, data)
         screens.append(gs)
         gs.open()
-
+    elif(opt == "config"):
+        cs = ui.ConfigureScreen(screen, open_screen)
+        screens.append(cs)
+        cs.open()
 run()

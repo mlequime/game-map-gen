@@ -17,7 +17,12 @@ class Building:
         self.type = type
 
     def can_place(self, tile_at):
+        """By default, all buildings can be placed. Can be overridden with specific use cases."""
         return True
+
+    def locked(self, player):
+        """By default, all buildings are unlocked. Can be overridden with specific use cases."""
+        return False
 
 class House(Building):
     """A basic small house."""
@@ -31,11 +36,17 @@ class BigHouse(House):
     def __init__(self):
         House.__init__(self, "BIGHOUSE", 600, random.randint(4, 6))
 
+    def locked(self, player):
+        return player.population < 100
+
 
 class Apartments(House):
     """A large block of apartments."""
     def __init__(self):
         House.__init__(self, "APARTMENTS", 1200, random.randint(12, 20))
+
+    def locked(self, player):
+        return player.population < 500
 
 class Store(Building):
     """A commercial shop."""
@@ -43,30 +54,50 @@ class Store(Building):
         Building.__init__(self, id, price, 3*jobs, 'c')
         self.jobs = jobs
 
+
+class BigStore(Store):
+    """A commercial shop."""
+    def __init__(self, id='STORE', price=800, jobs=24):
+        Store.__init__(self, id, price, jobs)
+
+    def locked(self, player):
+        return player.population < 400
+
 class PoliceStation(Building):
     """A police station, a required building based on population."""
     def __init__(self, price=50, jobs=10):
-        Building.__init__(self, "POLICE", price, 8*jobs, 'priv')
+        Building.__init__(self, "POLICE", price, 12*jobs, 'priv')
         self.jobs = jobs
-        self.police_safety = 60
+        self.police_safety = 170
+
+    def locked(self, player):
+        return player.population < 50
 
 class FireStation(Building):
     """A fire station, a required building based on population."""
     def __init__(self, price=50, jobs=10):
-        Building.__init__(self, "FIRE",price, 8*jobs, 'priv')
+        Building.__init__(self, "FIRE",price, 12*jobs, 'priv')
         self.jobs = jobs
-        self.fire_safety = 60
+        self.fire_safety = 150
+
+    def locked(self, player):
+        return player.population < 50
 
 class CoalMine(Building):
     def __init__(self):
-        Building.__init__(self, "MINE", 200, 10, 'i')
+        Building.__init__(self, "MINE", 1200, 45, 'i')
+        self.jobs = 20
 
     def can_place(self, tile_at):
         return tile_at['layer_0'] in ['GROUNDCOAL','GRASSCOAL','SANDCOAL']
 
 class OilRig(Building):
     def __init__(self):
-        Building.__init__(self, "MINE", 200, 10, 'i')
+        Building.__init__(self, "MINE", 3500, 80, 'i')
+        self.jobs = 60
 
     def can_place(self, tile_at):
         return tile_at['layer_0'] in ['GROUNDOIL','GRASSOIL','SANDOIL','WATEROIL']
+
+    def locked(self, player):
+        return player.population < 200

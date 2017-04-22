@@ -163,7 +163,7 @@ class MainGenerator:
         surface = pygame.transform.smoothscale(surface, size)
 
         return surface
-    def gen_island(self, scale):
+    def gen_island(self, scale, rainfall):
         """Generates an island map."""
         # Generate a standard map
         slate = self.gen_standard(scale)
@@ -171,11 +171,31 @@ class MainGenerator:
         # apply the mask
         slate = self.increase_contrast(slate, 1.6, 0)
         slate = self.mask_radial(slate)
+        self.erosion(slate, 4+rainfall)
+        return slate
 
-        pygame.image.save(slate, "slate.png")
-        self.erosion(slate)
-        self.set_sea_level(slate, 90)
-        pygame.image.save(slate, "slate.png")
+    def gen_continents(self, scale, rainfall):
+        """Generates a map with two large continents."""
+        # Generate a standard map
+        slate = self.gen_standard(scale)
+
+        # apply the mask
+        slate = self.increase_contrast(slate, 1.4, 40)
+        slate = self.mask_hyperbolic(slate)
+        self.erosion(slate, 3+rainfall)
+        return slate
+
+
+    def gen_highlands(self, scale, rainfall):
+        """Generates a highland map with high-up land, higher resources and little water or trees."""
+        # Generate a standard map
+        slate = self.gen_standard(scale)
+
+
+        self.erosion(slate, 5+rainfall)
+        pygame.image.save(slate, "slate_before_contrast.png")
+        slate = self.increase_contrast(slate, 1.2, 100)
+        pygame.image.save(slate, "slate_after_contrast.png")
         return slate
 
     # Overlay masks
@@ -293,9 +313,10 @@ class MainGenerator:
         return int((color.r + color.g + color.b) / 3)
 
     # Erosion algorithms
-    def erosion(self, surface, factor=4):
+    def erosion(self, surface, factor=3):
         """'Erodes' an input surface through the use of a simulated rainfall function. Power or strength of the erosion
         can be controlled with the input factor."""
+
         times_to_run = 10000 * factor
         size = surface.get_size()
 
@@ -384,8 +405,27 @@ class MainGenerator:
 class GameMapGenerator:
     """A generator for a playable game map. Calls the MainGenerator functions and produces a map with forests,
     rivers or other required feature to enable the player to play on the map."""
-    def __init__(self, map):
+    def __init__(self, map, data):
         self.map = map
+
+        self.map_type = data['map']
+        self.rainfall = data['rainfall']
+        self.resources = data['resources']
+
+        self.scale = 5 + (2 * data['size'])
+
+        if self.map_type == "island":
+            self.gen_island()
+        elif self.map_type == "highlands":
+            self.resources += 5
+            self.rainfall -= 1 if self.rainfall > 0 else 0
+            self.gen_highlands()
+        elif self.map_type == "continents":
+            self.rainfall += 1
+            self.gen_continents()
+        elif self.map_type == "deserts":
+            self.rainfall -= 1
+            self.gen_island()
 
     # Map generators
     def gen_empty(self):
@@ -423,26 +463,32 @@ class GameMapGenerator:
 
     def gen_island(self):
         """Generates an island map."""
-        # image = generators.MainGenerator().gen_island((320,250), "mixed", 1.5).tobytes("raw", "RGB")
-        # surface = pygame.image.fromstring(image, image.get_size(), 'RGB')
         while True:
-            surface = MainGenerator().gen_island(7)
+            print "Generating Island"
+            surface = MainGenerator().gen_island(self.scale, self.rainfall)
             self.gen_from_image(surface, surface.get_size())
 
-            # Define the islands
-            self.define_islands()
-            # Generate rivers
-            self.gen_rivers(surface)
-            # Generate forests
-            self.gen_forests()
-            # Generate ore veins
-            self.gen_ore_veins()
-            # Select player startpoint
-            islands_to_test = sorted(self.map.playable_islands, key=lambda k: random.random())
+            if self.gen_playable_elements(surface):
+                return
 
-            for island in islands_to_test:
-                if self.select_player_startpoint(island):
-                    return
+    def gen_continents(self):
+        while True:
+            print "Generating Continent"
+            surface = MainGenerator().gen_continents(self.scale, self.rainfall)
+            self.gen_from_image(surface, surface.get_size())
+
+            if self.gen_playable_elements(surface):
+                return
+
+
+    def gen_highlands(self):
+        while True:
+            print "Generating Highlands"
+            surface = MainGenerator().gen_highlands(self.scale, self.rainfall)
+            self.gen_from_image(surface, surface.get_size())
+
+            if self.gen_playable_elements(surface):
+                return
 
     def gen_from_image(self, surface, max_size):
         """"Generates a map from an image. All generators will generate an image which will then be passed into
@@ -479,7 +525,7 @@ class GameMapGenerator:
                     tile = 'OCEAN'
                 elif (average < 90):
                     tile = 'SHORE'
-                elif (average < 100):
+                elif (average < 100 or self.map_type == "deserts"):
                     tile = 'SAND'
                 elif (average < 200):
                     tile = 'GRASS'
@@ -490,6 +536,31 @@ class GameMapGenerator:
 
                 self.map.layer_0[y][x] = tile
 
+                # 2.5% chance of desert tiles generating a palm tree
+                if tile == 'SAND' and random.randint(0,40) == 0:
+                    self.map.layer_1[y][x] = 'PALMTREE'
+
+
+    def gen_playable_elements(self, surface):
+        # Define the islands
+        if self.map_type == 'highlands':
+            self.define_landmass()
+        else:
+            self.define_islands()
+        # Generate rivers
+        self.gen_rivers(surface)
+        # Generate forests
+        if self.map_type != 'deserts':
+            self.gen_forests()
+        # Generate ore veins
+        self.gen_ore_veins()
+        # Select player startpoint on the largest island
+        islands_to_test = sorted(self.map.playable_islands, key=len)
+
+        for island in islands_to_test:
+            if self.select_player_startpoint(island):
+                return True
+        return False
 
     # Search and define islands
     def define_islands(self):
@@ -523,6 +594,20 @@ class GameMapGenerator:
         # Return the recursion limit to normal value
         sys.setrecursionlimit(1000)
 
+        # Search and define islands
+
+    def define_landmass(self):
+        """Defines the map as a single landmass. For use only with the highlands map type."""
+        island = []
+
+        for y in range(0, self.map.size[1]):
+            for x in range(0, self.map.size[0]):
+                if self.map.get((x,y))['layer_0'] not in self.map.impassable:
+                    island.append((x,y))
+
+        self.map.islands = [island]
+        self.map.playable_islands = [island]
+
     def find_island_boundaries(self, visited_tiles, island_tiles, loc):
         """Walks around the map exploring an island to discover its boundaries."""
         x, y = loc
@@ -544,14 +629,14 @@ class GameMapGenerator:
         if x > 0:
             if self.map.get((x - 1, y))['layer_0'] not in self.map.impassable and (x - 1, y) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x - 1, y))
-        if x < self.map.size[0]:
+        if x < self.map.size[0] - 1:
             if self.map.get((x + 1, y))['layer_0'] not in self.map.impassable and (x + 1, y) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x + 1, y))
 
         if y > 0:
             if self.map.get((x, y - 1))['layer_0'] not in self.map.impassable and (x, y - 1) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x, y - 1))
-        if y < self.map.size[0]:
+        if y < self.map.size[0] - 1:
             if self.map.get((x, y + 1))['layer_0'] not in self.map.impassable and (x, y + 1) not in visited_tiles:
                 self.find_island_boundaries(visited_tiles, island_tiles, (x, y + 1))
 
@@ -578,7 +663,6 @@ class GameMapGenerator:
 
         return ((min_x + max_x)/2, (min_y + max_y)/2)
 
-
     # River generation
     def gen_rivers(self, surface):
         """Generates rivers on the map, using the surface heights as a basis."""
@@ -591,18 +675,21 @@ class GameMapGenerator:
 
             min_rivers = 1
             if len(island) > ((self.map.size[0] + self.map.size[1]) / 2) ** 1.15:
-                min_rivers = 2
+                min_rivers = min(4, int(len(island) ** (1. / 3)))
 
             # calculate a maximum number of forests
             rivers_count = min(min_rivers + 3, int(math.sqrt(len(island)) / 2))
             rivers_count = random.randint(min_rivers, rivers_count)
+
+            # Adjust number of rivers for rainfall value
+            rivers_count += (self.rainfall - 1)
 
             height_values = [{'value': self.averageRGB(surface.get_at(x)), 'loc': x} for x in island]
             height_values = sorted(height_values, key=lambda x: x['value'])
 
             while rivers_count > 0:
                 start_point = \
-                height_values[random.randint(int(len(height_values) * 0.85), int(len(height_values) * 0.98))]['loc']
+                height_values[random.randint(int(len(height_values) * 0.75), int(len(height_values) * 0.98))]['loc']
 
                 river_set = []
                 if self.draw_river(surface, start_point, river_set):
@@ -615,6 +702,7 @@ class GameMapGenerator:
                         self.map.set(loc, 'layer_1', 'RIVER')
                 else:
                     river_set = []
+
     def meander_river(self, river_set):
         """Takes a river set and adds a manual meander for aesthetic purposes"""
         if len(river_set) > 1:
@@ -663,7 +751,8 @@ class GameMapGenerator:
 
                 count += 1
             return river_set
-    def draw_river(self, surface, loc, river_set, delta=1):
+
+    def draw_river(self, surface, loc, river_set, weight=1):
 
         # Get the location and ensure it's within boundaries
         x, y = loc
@@ -679,10 +768,10 @@ class GameMapGenerator:
 
         possible_dirs = []
 
-        up = self.averageRGB(surface.get_at((x, y - 1)))
-        down = self.averageRGB(surface.get_at((x, y + 1)))
-        left = self.averageRGB(surface.get_at((x - 1, y)))
-        right = self.averageRGB(surface.get_at((x + 1, y)))
+        up = 127.5 if y == 0 else self.averageRGB(surface.get_at((x, y - 1)))
+        down = 127.5 if y == self.map.size[1] - 1 else self.averageRGB(surface.get_at((x, y + 1)))
+        left = 127.5 if x == 0 else self.averageRGB(surface.get_at((x - 1, y)))
+        right = 127.5 if x == self.map.size[0] - 1 else self.averageRGB(surface.get_at((x + 1, y)))
 
         if y > 0 and up <= current_val:
             possible_dirs.append({'dir': 'up', 'value': up})
@@ -717,20 +806,21 @@ class GameMapGenerator:
                 loc = (x + 1, y)
 
             if self.map.get(loc)['layer_0'] == 'SHORE' or self.map.get(loc)['layer_0'] == 'OCEAN':
-                if delta > 0:
+                if weight > 0:
                     # generate some river deltas if possible
                     if x > 0 and self.map.get((x - 1, y))['layer_0'] not in self.map.impassable:
-                        self.draw_river(surface, (x - 1, y), river_set, delta-1)
+                        self.draw_river(surface, (x - 1, y), river_set, weight-1)
                     if x < self.map.size[0] - 1 and self.map.get((x + 1, y))['layer_0'] not in self.map.impassable:
-                        self.draw_river(surface, (x + 1, y), river_set, delta-1)
+                        self.draw_river(surface, (x + 1, y), river_set, weight-1)
                     if y > 0 and self.map.get((x, y - 1))['layer_0'] not in self.map.impassable:
-                        self.draw_river(surface, (x, y - 1), river_set, delta-1)
+                        self.draw_river(surface, (x, y - 1), river_set, weight-1)
                     if y < self.map.size[1] - 1 and self.map.get((x, y + 1))['layer_0'] not in self.map.impassable:
-                        self.draw_river(surface, (x, y + 1), river_set, delta-1)
+                        self.draw_river(surface, (x, y + 1), river_set, weight-1)
 
                 # success!
                 return True
-
+            elif self.map_type == 'highlands' and len(river_set) > random.randint(10,26):
+                return True
             return self.draw_river(surface, loc, river_set)
 
     # Forest generation
@@ -749,12 +839,14 @@ class GameMapGenerator:
                 min_forests = 3
 
             # calculate a maximum number of forests
-            forest_count = max(min_forests + 2, int(math.sqrt(len(island)) / 1.5))
+            forest_count = max(min_forests + 4, int(math.sqrt(len(island)) / 3))
 
             if forest_count < min_forests:
                 forest_count = min_forests
             else:
                 forest_count = random.randint(min_forests, forest_count)
+
+            forest_count += (self.rainfall - 2)
 
             counted_tiles = []
             while forest_count > 0:
@@ -821,7 +913,6 @@ class GameMapGenerator:
                 self.grow_trees((loc[0] + 1, loc[1]), new_direction, weight - 1)
 
     # Ores generation
-    # TODO: Inspect why they dont work
     def gen_ore_veins(self):
         if len(self.map.islands) == 0:
             self.define_islands()
@@ -830,20 +921,24 @@ class GameMapGenerator:
             if len(island) < 30:
                 continue
 
-            i_min, i_max = 1, min(4, math.sqrt(len(island)) /2)
+            i_min, i_max = 1, min(4, int(math.sqrt(len(island)) /3))
+
+            # Modify by the resource abundancy option
+            i_max += (self.resources - 1)
 
             for i in range(i_min, i_max):
-                tile = self.map.get(island[random.randint(0, len(island)-1)])
+                coords = island[random.randint(0, len(island)-1)]
 
                 # 2/3 chance for coal, 1/3 for oil
                 if random.randint(0,2) > 0:
-                    self.gen_coal_veins(tile, random.randint(3,8))
+                    self.gen_coal_veins(coords,random.randint(4,8))
                 else:
-                    self.gen_oil_field(tile, random.randint(4,5))
+                    self.gen_oil_field(coords,random.randint(2,3))
 
+    def gen_coal_veins(self, loc, weight=4):
+        if weight < 0:
+            return
 
-
-    def gen_coal_veins(self, loc, delta):
         tile = self.map.get(loc)
         if tile == None:
             return
@@ -861,13 +956,40 @@ class GameMapGenerator:
             return
 
         # coal veins should draw in a roughly diagonal line
-        self.gen_coal_veins((loc[0]-(random.randint(0,1)),loc[1]-(random.randint(0,1))), delta-1)
-        self.gen_coal_veins((loc[0]+(random.randint(0,1)),loc[1]+(random.randint(0,1))), delta-1)
+        self.gen_coal_veins((loc[0]-(random.randint(0,1)),loc[1]-(random.randint(0,1))), weight-1)
+        self.gen_coal_veins((loc[0]+(random.randint(0,1)),loc[1]+(random.randint(0,1))), weight-1)
 
+    def gen_oil_field(self, loc, weight=3):
+        if weight < 0:
+            return
 
+        tile = self.map.get(loc)
+        if tile == None:
+            return
 
-    def gen_oil_field(self, loc, delta):
-        pass
+        tile_0 = tile['layer_0']
+
+        if tile_0== 'GRASS':
+            self.map.set(loc, 'layer_0', 'GRASSOIL')
+        elif tile_0 == 'SAND':
+            self.map.set(loc, 'layer_0', 'SANDOIL')
+        elif tile_0 == 'GROUND':
+            self.map.set(loc, 'layer_0', 'GROUNDOIL')
+        elif tile_0 == 'SHORE':
+            self.map.set(loc,'layer_0', 'WATEROIL')
+        elif tile_0 in self.map.oil:
+            pass
+        else:
+            return
+
+        if random.randint(0,1) == 1:
+            self.gen_oil_field((loc[0] - 2, loc[1] - 2), weight-1)
+        if random.randint(0,1) == 1:
+            self.gen_oil_field((loc[0] - 2, loc[1] + 2), weight-1)
+        if random.randint(0,1) == 1:
+            self.gen_oil_field((loc[0] + 2, loc[1] - 2), weight-1)
+        if random.randint(0,1) == 1:
+            self.gen_oil_field((loc[0] + 2, loc[1] + 2), weight-1)
 
     # Player start location selection
     def select_player_startpoint(self, island):
@@ -908,7 +1030,7 @@ class GameMapGenerator:
 
     def start_location_suitability(self, loc):
         current_tile = self.map.get(loc)
-        if current_tile['layer_0'] in self.map.impassable or current_tile['layer_0'] in ['SAND', 'SNOW']:
+        if current_tile['layer_0'] in self.map.impassable or (self.map_type != "deserts" and current_tile['layer_0'] in ['SAND', 'SNOW']):
             return []
 
         tiles = []
