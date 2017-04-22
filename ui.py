@@ -161,16 +161,12 @@ class ConfigureScreen:
         }
         self.size_types = {
             'high': {
-                'label': config.FONT.render("Small", 1, pygame.Color("white")),
+                'label': config.FONT.render("Large (May take longer to load)", 1, pygame.Color("white")),
                 'button': RadioButton(False, lambda: set('size_type', 'high'))
             },
             'medium': {
                 'label': config.FONT.render("Medium", 1, pygame.Color("white")),
                 'button': RadioButton(True, lambda: set('size_type', 'medium'))
-            },
-            'low': {
-                'label': config.FONT.render("Large (May take longer to load)", 1, pygame.Color("white")),
-                'button': RadioButton(False, lambda: set('size_type', 'low'))
             }
         }
         self.difficulty_types = {
@@ -404,7 +400,7 @@ class GameScreen:
                 if event.type == pygame.QUIT:
                     exit()
 
-                if pygame.mouse.get_pressed()[0]:
+                if pygame.mouse.get_pressed()[0] and hasattr(event, 'pos'):
                     self.click(event.pos)
 
                 # Controls for moving the map

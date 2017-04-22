@@ -146,12 +146,10 @@ class MainGenerator:
         pass
 
     # Generators
-    def gen_standard(self, scale):
-
+    def gen_simple_noise(self, scale):
         res = 2 ** scale if scale < 8 else 2 ** 8
         size = (res, res)
-
-
+        # Generate the noise using noiselib
         src = fBm(8, 0.45, simplex_noise2)
         src = RescaleNoise((-1, 1), (0, 1), src)
         colors = ((0, 0, 0), (233, 233, 233), 1)
@@ -163,13 +161,16 @@ class MainGenerator:
         surface = pygame.transform.smoothscale(surface, size)
 
         return surface
+
     def gen_island(self, scale, rainfall):
         """Generates an island map."""
         # Generate a standard map
-        slate = self.gen_standard(scale)
+
+        # If the scale is 5 or below generate at a higher size then scale down for better results
+        slate = self.gen_simple_noise(scale)
 
         # apply the mask
-        slate = self.increase_contrast(slate, 1.6, 0)
+        slate = self.increase_contrast(slate, 1.6)
         slate = self.mask_radial(slate)
         self.erosion(slate, 4+rainfall)
         return slate
@@ -177,7 +178,7 @@ class MainGenerator:
     def gen_continents(self, scale, rainfall):
         """Generates a map with two large continents."""
         # Generate a standard map
-        slate = self.gen_standard(scale)
+        slate = self.gen_simple_noise(scale)
 
         # apply the mask
         slate = self.increase_contrast(slate, 1.4, 40)
@@ -189,13 +190,12 @@ class MainGenerator:
     def gen_highlands(self, scale, rainfall):
         """Generates a highland map with high-up land, higher resources and little water or trees."""
         # Generate a standard map
-        slate = self.gen_standard(scale)
+        slate = self.gen_simple_noise(scale)
 
-
-        self.erosion(slate, 5+rainfall)
-        pygame.image.save(slate, "slate_before_contrast.png")
+        # erode the highland slightly more than the other map types
+        self.erosion(slate, 6+rainfall)
+        # The third parameter, brightness, is what makes this a highland map with a +100 modifier
         slate = self.increase_contrast(slate, 1.2, 100)
-        pygame.image.save(slate, "slate_after_contrast.png")
         return slate
 
     # Overlay masks
@@ -556,6 +556,7 @@ class GameMapGenerator:
         self.gen_ore_veins()
         # Select player startpoint on the largest island
         islands_to_test = sorted(self.map.playable_islands, key=len)
+        islands_to_test.reverse()
 
         for island in islands_to_test:
             if self.select_player_startpoint(island):
@@ -682,7 +683,7 @@ class GameMapGenerator:
             rivers_count = random.randint(min_rivers, rivers_count)
 
             # Adjust number of rivers for rainfall value
-            rivers_count += (self.rainfall - 1)
+            rivers_count += (self.rainfall - 1) * 2
 
             height_values = [{'value': self.averageRGB(surface.get_at(x)), 'loc': x} for x in island]
             height_values = sorted(height_values, key=lambda x: x['value'])
@@ -833,10 +834,10 @@ class GameMapGenerator:
             if len(island) < 30:
                 continue
 
-            min_forests = 0
+            min_forests = 1
             # If it's a particularly big island relative to the map size, we should need a few forests
             if len(island) > ((self.map.size[0] + self.map.size[1]) / 2) ** 1.15:
-                min_forests = 3
+                min_forests = 4
 
             # calculate a maximum number of forests
             forest_count = max(min_forests + 4, int(math.sqrt(len(island)) / 3))
@@ -846,7 +847,7 @@ class GameMapGenerator:
             else:
                 forest_count = random.randint(min_forests, forest_count)
 
-            forest_count += (self.rainfall - 2)
+            forest_count += (self.rainfall - 1)*3
 
             counted_tiles = []
             while forest_count > 0:
@@ -864,10 +865,10 @@ class GameMapGenerator:
                 if len(counted_tiles) >= len(island):
                     break
 
-                self.grow_trees(loc, 'up', random.randint(6, 12))
-                self.grow_trees(loc, 'down', random.randint(6, 12))
-                self.grow_trees(loc, 'left', random.randint(6, 12))
-                self.grow_trees(loc, 'right', random.randint(6, 12))
+                self.grow_trees(loc, 'up', random.randint(6, 12) + self.rainfall * 2)
+                self.grow_trees(loc, 'down', random.randint(6, 12) + self.rainfall * 2)
+                self.grow_trees(loc, 'left', random.randint(6, 12) + self.rainfall * 2)
+                self.grow_trees(loc, 'right', random.randint(6, 12) + self.rainfall * 2)
                 forest_count -= 1
 
     def grow_trees(self, loc, direction, weight):
