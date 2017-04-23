@@ -3,9 +3,9 @@ import pygame
 import buildings
 import config
 import map
-import mayor
+import player
 
-from mayor import Mayor
+from player import Mayor
 
 
 class MenuScreen:
@@ -32,7 +32,7 @@ class MenuScreen:
 
     def open(self):
         # Play the title music
-        self.title_music.play(-1)
+        # self.title_music.play(-1)
 
         clock = pygame.time.Clock()
         while True:
@@ -342,7 +342,7 @@ class GameScreen:
         self.player = Mayor(data['difficulty'])
 
         # set up Map
-        tileset = map.Tileset("src/test.png")
+        tileset = map.Tileset("src/tileset.png")
         self.map = map.Map(tileset, (80, 40), data)
 
         # set up inventory
@@ -357,6 +357,7 @@ class GameScreen:
             Purchasable("FIRE", "Fire Station", buildings.FireStation()),
             Purchasable("MINE", "Coal Mine (Can only place on coal)", buildings.CoalMine()),
             Purchasable("OILRIG", "Oil Rig (Can only place on oil)", buildings.OilRig()),
+            Purchasable("FERRY", "Ferry Terminal", buildings.FerryTerminal()),
             Bulldozer()
         ]
 
@@ -431,7 +432,7 @@ class GameScreen:
 
             # If there's an active tile, draw its details
             if self.map.tile_at != None:
-                text = "{}: ({}, {})".format(self.map.tile_at['coords'], self.map.tile_at['tile']['layer_0'],
+                text = "{}: ({}, {})".format(self.map.tile_at['map_xy'], self.map.tile_at['tile']['layer_0'],
                                              self.map.tile_at['tile']['layer_1'] if self.map.tile_at['tile'][
                                                                                         'layer_1'] != 'UI_EMPTY' else 'None')
                 tile_at_shadow = config.FONT.render(text, 1, pygame.Color("black"))
@@ -473,6 +474,10 @@ class GameScreen:
                 pygame.draw.rect(self.screen, (200, 200, 200) if self.map.selected_item != item else (255, 255, 55),
                                  rect)
 
+                if self.map.selected_item == item:
+                    pygame.draw.rect(self.screen, (255, 255, 55),
+                                     pygame.Rect(rect.left - 1, rect.top - 1, rect.width + 2, rect.height + 2), 1)
+
                 icon = self.map.tileset.get(item.ID)
 
                 # If we've not unlocked the building yet, don't draw the icon and present the locked hover label
@@ -491,7 +496,7 @@ class GameScreen:
                 else:
                     # If we are hovering over the current inventory item
                     if rect.collidepoint(pygame.mouse.get_pos()):
-                        pygame.draw.rect(self.screen, (255, 255, 55), rect, 1)
+                        pygame.draw.rect(self.screen, (255, 255, 55), pygame.Rect(rect.left-1, rect.top-1, rect.width+2, rect.height+2), 1)
                         # Show a label with the item ID and price (if a price exists)
                         item_and_price = config.FONT.render(
                             "{}{}".format(item.text, " (${})".format(item.price) if item.price > 0 else ""), 1,
@@ -521,7 +526,7 @@ class GameScreen:
         for tile in self.map.visible_tiles:
             if tile['coords'][0] + config.TILE_W > pos[0] > tile['coords'][0] \
                     and tile['coords'][1] + config.TILE_H > pos[1] > tile['coords'][1]:
-                if item.building != None and not item.building.can_place(tile['map_xy']):
+                if item.building != None and not item.building.can_place(tile, self.map):
                     return
                 self.add_to_tile(tile['map_xy'])
 
@@ -533,11 +538,15 @@ class GameScreen:
 
     def add_to_tile(self, tile_xy):
         x, y = tile_xy
-        map_at = self.map.get(tile_xy)
+        tile = self.map.get(tile_xy)
+        map_at = {
+            'tile': tile,
+            'map_xy': tile_xy
+        }
         # if bulldozer selected
         if self.map.selected_item.ID == 'BULLDOZER':
-            if map_at['layer_1'] not in ['UI_EMPTY', 'RIVER', 'MAYORS']:
-                if map_at['layer_1'] == 'ROAD':
+            if tile['layer_1'] not in ['UI_EMPTY', 'RIVER', 'MAYORS']:
+                if tile['layer_1'] == 'ROAD':
                     self.player.roads -= 1
                 self.map.set(tile_xy, 'layer_1', 'UI_EMPTY')
                 self.play_sound('delete')
@@ -545,7 +554,7 @@ class GameScreen:
         elif self.player.money < self.map.selected_item.price:
             self.play_sound('broke')
             return
-        elif self.map.selected_item.building != None and not self.map.selected_item.building.can_place(map_at):
+        elif self.map.selected_item.building != None and not self.map.selected_item.building.can_place(map_at, self.map):
             return
         elif self.map.add_to_tile(tile_xy):
             # stop the player from placing a building if they can't afford it

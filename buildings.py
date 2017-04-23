@@ -16,9 +16,9 @@ class Building:
         # buildings
         self.type = type
 
-    def can_place(self, tile_at):
-        """By default, all buildings can be placed. Can be overridden with specific use cases."""
-        return True
+    def can_place(self, tile_at, map=None):
+        """By default, all buildings can be provided they are near road. Can be overridden with specific use cases."""
+        True
 
     def locked(self, player):
         """By default, all buildings are unlocked. Can be overridden with specific use cases."""
@@ -88,16 +88,36 @@ class CoalMine(Building):
         Building.__init__(self, "MINE", 1200, 45, 'i')
         self.jobs = 20
 
-    def can_place(self, tile_at):
-        return tile_at['layer_0'] in ['GROUNDCOAL','GRASSCOAL','SANDCOAL']
+    def can_place(self, tile_at, map=None):
+        return tile_at['tile']['layer_0'] in ['GROUNDCOAL','GRASSCOAL','SANDCOAL']
 
 class OilRig(Building):
     def __init__(self):
         Building.__init__(self, "MINE", 3500, 80, 'i')
         self.jobs = 60
 
-    def can_place(self, tile_at):
-        return tile_at['layer_0'] in ['GROUNDOIL','GRASSOIL','SANDOIL','WATEROIL']
+    def can_place(self, tile_at, map=None):
+        return tile_at['tile']['layer_0'] in ['GROUNDOIL','GRASSOIL','SANDOIL','WATEROIL']
 
     def locked(self, player):
         return player.population < 200
+
+
+class FerryTerminal(Building):
+    def __init__(self):
+        Building.__init__(self, "FERRY", 1000, 50, 'priv')
+        self.jobs = 5
+
+    def can_place(self, tile_at, map=None):
+        x,y = tile_at['map_xy']
+        place = False
+        # If there is a shoreline within a single tile, it can be placed
+        if (x > 0 and map.get(((x-1), y))['layer_0'] == 'SHORE') or \
+            (x < map.size[0] - 1 and map.get((x+1, y))['layer_0'] == 'SHORE') or \
+                (y > 0 and map.get((x,y-1))['layer_0'] == 'SHORE') or \
+                (y < map.size[1] - 1 and map.get((x, y+1))['layer_0'] == 'SHORE'):
+            place = True
+        return place
+
+    def locked(self, player):
+        return player.population < 400

@@ -1,4 +1,7 @@
 #!/usr/bin/python
+
+import sys
+import copy
 import random
 import numpy as np
 
@@ -6,7 +9,6 @@ import noiselib
 import pygame
 import math
 
-import sys
 from noiselib import fBm, simplex_noise2
 from noiselib.modules.surfaces import PixelArray, RGBLerpNoise
 from noiselib.modules.main import RescaleNoise
@@ -14,130 +16,6 @@ from noiselib.modules.main import RescaleNoise
 from PIL import Image
 
 import config
-
-
-class DiamondSquare:
-    def __init__(self, res, corners):
-        """Sets up the diamond-square generator."""
-        self.map = []
-        self.res = res + 1
-        self.max = self.res - 1
-        self.corners = corners
-
-        self.lowValue = 0
-        self.highValue = 0
-
-        for x in range(0, self.res):
-            for y in range(0, self.res):
-                self.map.append(-1)
-
-    def get(self, xy):
-        x, y = xy
-        if x < 0 or x > self.max or y < 0 or y > self.max:
-            return -1
-        return self.map[x + (self.res * y)]
-    def set(self, xy, value):
-        x, y = xy
-        self.map[x + (self.res * y)] = value
-
-    def average(self, values):
-        items = [i for i in values if i != -1]
-
-        return -1 if len(items) == 0 else sum(items) / len(items)
-    def divide(self, res):
-        half = res / 2
-        scale = self.rough * res
-
-        if half < 1:
-            return
-
-        for y in range(half, self.max, res):
-            for x in range(half, self.max, res):
-                self.square((x, y), half, random.uniform(
-                    0.00, 1.00) * scale * 2 - scale)
-
-        for y in range(0, self.max + 1, half):
-            for x in range((y + half) % res, self.max + 1, res):
-                self.diamond((x, y), half, random.uniform(
-                    0.00, 1.00) * scale * 2 - scale)
-
-        self.divide(res / 2, )
-
-    def square(self, xy, res, change):
-        x, y = xy
-
-        t1 = self.get((x - res, y - res))
-        t2 = self.get((x + res, y - res))
-        b1 = self.get((x - res, y + res))
-        b2 = self.get((x + res, y + res))
-        val = self.average([t1, t2, b1, b2]) + change
-
-        if val < self.lowValue:
-            self.lowValue = val
-        elif val > self.highValue:
-            self.highValue = val
-
-        self.set(xy, val)
-    def diamond(self, xy, res, change):
-        x, y = xy
-
-        t = self.get((x, y - res))
-        r = self.get((x + res, y))
-        b = self.get((x, y + res))
-        l = self.get((x - res, y))
-        val = self.average([t, r, b, l]) + change
-
-        if val < self.lowValue:
-            self.lowValue = val
-        elif val > self.highValue:
-            self.highValue = val
-
-        self.set(xy, val)
-
-    def generate(self, rough):
-        self.rough = rough
-        self.set((0, 0), self.corners[0])
-        self.set((0, self.max), self.corners[1])
-        self.set((self.max, 0), self.corners[2])
-        self.set((self.max, self.max), self.corners[3])
-
-        self.divide(self.max)
-
-        if self.lowValue > 0:
-            self.lowValue = 0
-
-        print "low value: ", self.lowValue
-        for x in range(0, len(self.map)):
-            self.map[x] -= self.lowValue
-
-        self.highValue -= self.lowValue
-
-    def convert_table(self):
-        output = []
-
-        for x in range(0, self.res):
-            row = []
-            for y in range(0, self.res):
-                val = self.map[y + (x * self.res)]
-                row.append(val)
-            output.append(row)
-
-        return output
-    def convert_to_image(self):
-        output = []
-
-        for x in range(0, self.res):
-            row = []
-            for y in range(0, self.res):
-                val = (self.map[y + (x * self.res)] / self.highValue) * 255  # normalize the values to 0-255 for rgb
-                row.append(val)
-            output.append(row)
-
-        array = np.asarray(output)
-        im = Image.fromarray(array)
-        if im.mode != 'RGB':
-            im = im.convert('RGB')
-        return im
 
 class MainGenerator:
     """Generates raw heightmaps with no additional features to be used by the game map generators."""
@@ -170,7 +48,7 @@ class MainGenerator:
         slate = self.gen_simple_noise(scale)
 
         # apply the mask
-        slate = self.increase_contrast(slate, 1.6)
+        slate = self.increase_contrast(slate, 1.4)
         slate = self.mask_radial(slate)
         self.erosion(slate, 4+rainfall)
         return slate
@@ -181,25 +59,26 @@ class MainGenerator:
         slate = self.gen_simple_noise(scale)
 
         # apply the mask
-        slate = self.increase_contrast(slate, 1.4, 40)
+        slate = self.increase_contrast(slate, 1.3, 40)
         slate = self.mask_hyperbolic(slate)
         self.erosion(slate, 3+rainfall)
         return slate
 
 
     def gen_highlands(self, scale, rainfall):
-        """Generates a highland map with high-up land, higher resources and little water or trees."""
+        """Generates a highland map with high-up land, higher resources and less water or trees."""
         # Generate a standard map
         slate = self.gen_simple_noise(scale)
 
+        # The third parameter, brightness, is what makes this a highland map with a +100 modifier
+        slate = self.increase_contrast(slate, 1.3, 100)
         # erode the highland slightly more than the other map types
         self.erosion(slate, 6+rainfall)
-        # The third parameter, brightness, is what makes this a highland map with a +100 modifier
-        slate = self.increase_contrast(slate, 1.2, 100)
         return slate
 
     # Overlay masks
     def mask_radial(self, surface):
+        """Generates a radial mask over an input surface."""
         size = surface.get_size()
         output = pygame.Surface(size)
 
@@ -221,6 +100,7 @@ class MainGenerator:
                 output.set_at((x, y), pygame.Color(color, color, color, 255))
         return output
     def mask_hyperbolic(self, surface):
+        """Generates a hyperbolic paraboloid mask over an input surface."""
         size = surface.get_size()
         output = pygame.Surface(size)
         for y in range(0, size[1]):
@@ -238,6 +118,7 @@ class MainGenerator:
 
         return output
     def mask_linear(self, surface):
+        """Generates a linear mask over an input surface."""
         size = surface.get_size()
         output = pygame.Surface(size)
         for y in range(0, size[1]):
@@ -282,6 +163,7 @@ class MainGenerator:
                     print av
         return slate
     def brighten_image(self, surface, factor):
+        """Brightens an image by multiplying by an input factor."""
         size = surface.get_size()
 
         for y in range(0, size[1]):
@@ -290,6 +172,7 @@ class MainGenerator:
                 new_color = pygame.Color(color.r * factor, color.g * factor, color.b * factor, 255)
                 surface.set_at((x, y), new_color)
         return surface
+
     def increase_contrast(self, surface, factor, brightness=0):
         """Increases the contract of an input surface by given factor, with option for a brightness modifier"""
         size = surface.get_size()
@@ -306,8 +189,8 @@ class MainGenerator:
                     surface.set_at((x, y), pygame.Color(new_color, new_color, new_color, 255))
                 except Exception, e:
                     print new_color
-
         return surface
+
     def averageRGB(self, color):
         """Averages the RGB values into a grayscale color."""
         return int((color.r + color.g + color.b) / 3)
@@ -518,31 +401,41 @@ class GameMapGenerator:
         for x in range(self.map.size[0]):
             for y in range(self.map.size[1]):
                 red, green, blue, alpha = surface.get_at((x, y))
-                average = (red + green + blue) // 3
+                average = (red + green + blue) / 3
 
                 tile = 'GRASS'
-                if (average < 70):
+                if average < 50:
                     tile = 'OCEAN'
-                elif (average < 90):
+                elif average < 100:
                     tile = 'SHORE'
-                elif (average < 100 or self.map_type == "deserts"):
+                # if desert type, all higher tiles should be sand
+                elif self.map_type == "deserts":
                     tile = 'SAND'
-                elif (average < 200):
+                elif average < 200:
                     tile = 'GRASS'
-                elif (average < 230):
+                elif average < 230:
                     tile = 'GROUND'
                 else:
                     tile = 'SNOW'
 
                 self.map.layer_0[y][x] = tile
 
-                # 2.5% chance of desert tiles generating a palm tree
-                if tile == 'SAND' and random.randint(0,40) == 0:
+                # 2.5% chance of high elevation tiles generating a mountain
+                if tile in ['GROUND', 'SNOW'] and random.randint(0,40) == 0:
+                    self.map.layer_1[y][x] = 'MOUNTAIN'
+
+                # 2% chance of desert tiles generating a palm tree
+                if tile in ['SAND'] and random.randint(0,50) == 0:
                     self.map.layer_1[y][x] = 'PALMTREE'
 
 
     def gen_playable_elements(self, surface):
         # Define the islands
+        if self.map_type not in ['deserts','highlands']:
+            self.gen_beaches()
+
+        self.gen_snow()
+
         if self.map_type == 'highlands':
             self.define_landmass()
         else:
@@ -674,23 +567,19 @@ class GameMapGenerator:
             if len(island) < 40:
                 continue
 
-            min_rivers = 1
-            if len(island) > ((self.map.size[0] + self.map.size[1]) / 2) ** 1.15:
-                min_rivers = min(4, int(len(island) ** (1. / 3)))
+            i_min = max(1, int(len(island) ** (1. / 5)))
 
-            # calculate a maximum number of forests
-            rivers_count = min(min_rivers + 3, int(math.sqrt(len(island)) / 2))
-            rivers_count = random.randint(min_rivers, rivers_count)
+            # calculate a maximum number of rivers
+            i_max = max(i_min + 3, int(len(island) ** (1. / 3)))
 
-            # Adjust number of rivers for rainfall value
-            rivers_count += (self.rainfall - 1) * 2
+            rivers_count = random.randint(i_min, i_max) + (self.rainfall - 1)
 
             height_values = [{'value': self.averageRGB(surface.get_at(x)), 'loc': x} for x in island]
             height_values = sorted(height_values, key=lambda x: x['value'])
 
             while rivers_count > 0:
                 start_point = \
-                height_values[random.randint(int(len(height_values) * 0.75), int(len(height_values) * 0.98))]['loc']
+                height_values[random.randint(int(len(height_values) * 0.85), int(len(height_values) * 0.98))]['loc']
 
                 river_set = []
                 if self.draw_river(surface, start_point, river_set):
@@ -834,20 +723,13 @@ class GameMapGenerator:
             if len(island) < 30:
                 continue
 
-            min_forests = 1
-            # If it's a particularly big island relative to the map size, we should need a few forests
-            if len(island) > ((self.map.size[0] + self.map.size[1]) / 2) ** 1.15:
-                min_forests = 4
+            i_min = max(1, int(len(island)**(1./4.)))
 
             # calculate a maximum number of forests
-            forest_count = max(min_forests + 4, int(math.sqrt(len(island)) / 3))
+            i_max = max(i_min + 2, int(len(island)**(1./3.) * 1.5))
 
-            if forest_count < min_forests:
-                forest_count = min_forests
-            else:
-                forest_count = random.randint(min_forests, forest_count)
-
-            forest_count += (self.rainfall - 1)*3
+            # Calculate the number of times to iterate, modified by the rainfall parameter
+            forest_count = random.randint(i_min, i_max) + (self.rainfall - 1)*3
 
             counted_tiles = []
             while forest_count > 0:
@@ -865,10 +747,10 @@ class GameMapGenerator:
                 if len(counted_tiles) >= len(island):
                     break
 
-                self.grow_trees(loc, 'up', random.randint(6, 12) + self.rainfall * 2)
-                self.grow_trees(loc, 'down', random.randint(6, 12) + self.rainfall * 2)
-                self.grow_trees(loc, 'left', random.randint(6, 12) + self.rainfall * 2)
-                self.grow_trees(loc, 'right', random.randint(6, 12) + self.rainfall * 2)
+                self.grow_trees(loc, 'up', random.randint(8, 12) + self.rainfall)
+                self.grow_trees(loc, 'down', random.randint(8, 12) + self.rainfall)
+                self.grow_trees(loc, 'left', random.randint(8, 12) + self.rainfall)
+                self.grow_trees(loc, 'right', random.randint(8, 12) + self.rainfall)
                 forest_count -= 1
 
     def grow_trees(self, loc, direction, weight):
@@ -991,6 +873,73 @@ class GameMapGenerator:
             self.gen_oil_field((loc[0] + 2, loc[1] - 2), weight-1)
         if random.randint(0,1) == 1:
             self.gen_oil_field((loc[0] + 2, loc[1] + 2), weight-1)
+
+    def gen_beaches(self):
+        new_map = copy.deepcopy(self.map)
+
+        for x in range(0, self.map.size[0]):
+            for y in range(0, self.map.size[1]):
+                tiles, count = (0,0)
+
+                for nx in range(x-1, x+2):
+                    for ny in range(y-1, y+2):
+                        tile_at = self.map.get((nx,ny))
+                        # If the tile is off the map, or it is not water and it is the current tile, do not affect the automata value
+                        if tile_at == None or (tile_at['layer_0'] not in self.map.impassable and nx == x and ny == y):
+                            continue
+
+                        if tile_at['layer_0'] == "OCEAN":
+                            tiles -= 2
+                        elif tile_at['layer_0'] == "SHORE":
+                            tiles -= 1
+                        elif tile_at['layer_0'] not in self.map.impassable:
+                            tiles += 1
+                        count += 1
+
+                if tiles <= -(count/2) and self.map.get((x,y))['layer_0'] != "OCEAN":
+                    new_map.layer_0[y][x] = 'SHORE'
+                if tiles > -(count/2) and tiles < (count/2):
+                    new_map.layer_0[y][x] = 'SAND'
+                    # Add a small chance of adding a palm tree
+                    if random.randint(0,100) < 5:
+                        new_map.layer_1[y][x] = 'PALMTREE'
+
+        self.map.layer_0 = copy.copy(new_map.layer_0)
+        self.map.layer_1 = copy.copy(new_map.layer_1)
+
+
+    def gen_snow(self):
+        new_map = copy.deepcopy(self.map)
+
+        for x in range(0, self.map.size[0]):
+            for y in range(0, self.map.size[1]):
+                snow = 0
+                grass = 0
+                ground = 0
+
+                for nx in range(x-1, x+2):
+                    for ny in range(y-1, y+2):
+                        tile_at = self.map.get((nx,ny))
+                        # If the tile is off the map, or it is not water and it is the current tile, do not affect the automata value
+                        if tile_at == None or (tile_at['layer_0'] not in self.map.impassable and nx == x and ny == y):
+                            continue
+                        elif tile_at['layer_0'] == "SNOW":
+                            snow += 1
+                        elif tile_at['layer_0'] == "GROUND":
+                            ground += 1
+                        elif tile_at['layer_0'] == "GRASS":
+                            grass += 1
+
+                # if more than two neighbours are snow, this tile should be snow
+                if snow > 2:
+                    new_map.layer_0[y][x] = 'SNOW'
+                # otherwise, if it is snow and is isolated, clip it
+                elif self.map.get((x,y))['layer_0'] == 'SNOW':
+                    new_map.layer_0[y][x] = "GROUND" if ground > grass else "GRASS"
+
+        self.map.layer_0 = copy.copy(new_map.layer_0)
+        self.map.layer_1 = copy.copy(new_map.layer_1)
+
 
     # Player start location selection
     def select_player_startpoint(self, island):

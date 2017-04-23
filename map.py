@@ -37,79 +37,78 @@ class Tileset:
                 'SAND': 2,
                 'SHORE': 3,
                 'OCEAN': 4,
-                'ICE': 5,
                 'SNOW': 6,
-                'UI_EMPTY': 7,
-                'COLD_GROUND': 8,
-                'COLD_GRASS': 9,
-                'COLD_SAND': 10,
-                'COLD_SHORE': 11,
-                'ROAD': 12,
-                'CURSOR': 13,
+
+                # resources
+                'GROUNDCOAL': 8,
+                'GRASSCOAL': 9,
+                'SANDCOAL': 10,
+
+                'GROUNDOIL': 6,
+                'GRASSOIL': 7,
+                'SANDOIL': 14,
+                'WATEROIL': 15,
 
                 # items
-                'PALMTREE': 16,
-                'TREES': 17,
-                'ROCK': 18,
-                'RIVER': 19,
+                'PALMTREE': 11,
+                'TREES': 12,
+                'MOUNTAIN': 13,
 
+                'ROAD': 31,
                 # road directions
-                'ROAD_0': 24,
-                'ROAD_1': 25,
-                'ROAD_2': 26,
-                'ROAD_3': 27,
-                'ROAD_4': 28,
-                'ROAD_5': 29,
-                'ROAD_6': 30,
-                'ROAD_7': 31,
-                'ROAD_8': 32,
-                'ROAD_9': 33,
-                'ROAD_10': 34,
-                'ROAD_11': 35,
-                'ROAD_12': 36,
-                'ROAD_13': 37,
-                'ROAD_14': 38,
+                'ROAD_0': 16,
+                'ROAD_1': 17,
+                'ROAD_2': 18,
+                'ROAD_3': 19,
+                'ROAD_4': 20,
+                'ROAD_5': 21,
+                'ROAD_6': 22,
+                'ROAD_7': 23,
+                'ROAD_8': 24,
+                'ROAD_9': 25,
+                'ROAD_10': 26,
+                'ROAD_11': 27,
+                'ROAD_12': 28,
+                'ROAD_13': 29,
+                'ROAD_14': 30,
 
+                'RIVER': 47,
                 # water directions
-                'RIVER_0': 40,
-                'RIVER_1': 41,
-                'RIVER_2': 42,
-                'RIVER_3': 43,
-                'RIVER_4': 44,
-                'RIVER_5': 45,
-                'RIVER_6': 46,
-                'RIVER_7': 47,
-                'RIVER_8': 48,
-                'RIVER_9': 49,
-                'RIVER_10': 50,
-                'RIVER_11': 51,
-                'RIVER_12': 52,
-                'RIVER_13': 53,
-                'RIVER_14': 54,
+                'RIVER_0': 32,
+                'RIVER_1': 33,
+                'RIVER_2': 34,
+                'RIVER_3': 35,
+                'RIVER_4': 36,
+                'RIVER_5': 37,
+                'RIVER_6': 38,
+                'RIVER_7': 39,
+                'RIVER_8': 40,
+                'RIVER_9': 41,
+                'RIVER_10': 42,
+                'RIVER_11': 43,
+                'RIVER_12': 44,
+                'RIVER_13': 45,
+                'RIVER_14': 46,
 
                 # buildings
-                'HOUSE': 56,
-                'BIGHOUSE': 57,
-                'APARTMENTS': 58,
-                'STORE': 59,
-                'BIGSTORE': 60,
-                'POLICE': 61,
-                'FIRE': 62,
-                'MAYORS': 63,
+                'HOUSE': 48,
+                'BIGHOUSE': 49,
+                'APARTMENTS': 50,
+                'STORE': 51,
+                'BIGSTORE': 52,
+                'POLICE': 53,
+                'FIRE': 54,
+                'MAYORS': 55,
+                'MINE': 56,
+                'OILRIG': 57,
+                'FERRY': 58,
 
-                'UI_LOCKED': 64,
-                'BULLDOZER': 66,
-                'MINE': 68,
-                'OILRIG': 69,
+                # UI
+                'UI_EMPTY': 59,
+                'CURSOR': 61,
+                'UI_LOCKED': 62,
+                'BULLDOZER': 63
 
-                'GROUNDCOAL': 72,
-                'GRASSCOAL': 73,
-                'SANDCOAL': 74,
-
-                'GROUNDOIL': 76,
-                'GRASSOIL': 77,
-                'SANDOIL': 78,
-                'WATEROIL': 79
             }
 
 
@@ -230,15 +229,15 @@ class Map:
             if self.get(loc)['layer_1'] != 'UI_EMPTY':
                 return False
             if tile == 'ROAD':
-                # Roads can only be placed if there is an adjacent road
+                # Roads can only be placed if there is an adjacent road or ferry terminal
                 up, down, left, right = False, False, False, False
-                if y > 0 and self.get((loc[0], loc[1] - 1))['layer_1'] == 'ROAD':
+                if y > 0 and self.get((loc[0], loc[1] - 1))['layer_1'] in ['ROAD','FERRY']:
                     left = True
-                if y < self.size[0] - 1 and self.get((loc[0], loc[1] + 1))['layer_1'] == 'ROAD':
+                if y < self.size[0] - 1 and self.get((loc[0], loc[1] + 1))['layer_1'] in ['ROAD','FERRY']:
                     right = True
-                if x > 0 and self.get((loc[0] - 1, loc[1]))['layer_1'] == 'ROAD':
+                if x > 0 and self.get((loc[0] - 1, loc[1]))['layer_1'] in ['ROAD','FERRY']:
                     left = True
-                if x < self.size[0] - 1 and self.get((loc[0] + 1, loc[1]))['layer_1'] == 'ROAD':
+                if x < self.size[0] - 1 and self.get((loc[0] + 1, loc[1]))['layer_1'] in ['ROAD','FERRY']:
                     right = True
                 return up or down or left or right
             elif tile in ['HOUSE', 'BIGHOUSE', 'APARTMENTS', 'STORE', 'POLICE', 'FIRE', 'MINE']:
@@ -307,6 +306,9 @@ class Map:
                         # wrapping code to connect rivers and roads
                         tile_dir = ""
                         accepted_connections = [tile1]
+                        if tile1 == "ROAD":
+                            # Allow roads to connect to the ferry terminals
+                            accepted_connections.append("FERRY")
                         if tile1 == "RIVER":
                             # Allow rivers to connect to the shore or oceans
                             accepted_connections.append("SHORE")
@@ -357,7 +359,7 @@ class Map:
                     possible_cursor = pygame.Surface((20, 20))
                     possible_cursor.set_alpha(120)
                     self.tile_at = {
-                        'coords': (x, y),
+                        'map_xy': (x, y),
                         'tile': self.get((x, y))
                     }
 
@@ -373,7 +375,7 @@ class Map:
                     else:
                         can_place = True
                         if self.selected_item.building != None:
-                            can_place = self.selected_item.building.can_place(self.tile_at['tile'])
+                            can_place = self.selected_item.building.can_place(self.tile_at, self)
                         can_place = can_place and self.can_add_to_tile(self.selected_item.ID, (x, y))
                         possible_cursor.fill(config.COLOR_G if can_place else config.COLOR_GRAY)
                     screen.blit(possible_cursor, (active_tile['coords'][0] + 2, active_tile['coords'][1] + 2))
